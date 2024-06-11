@@ -227,25 +227,26 @@ def validate_login(email, password):
     if conn:
         try:
             cur = conn.cursor()
-            cur.execute('SELECT Customer_ID, Password FROM tbl_Customer WHERE Email = ?', (email,))
+            cur.execute('SELECT Customer_ID, Password, CustomerName, CustomerSurname FROM tbl_Customer WHERE Email = ?', (email,))
             row = cur.fetchone()
             if row and hashlib.sha256(password.encode()).hexdigest() == row[1]:
-                return row[0]
+                return row[0], row[2], row[3]  # Return user_id, name, and surname
         except sqlite3.Error as e:
             print(f"An error occurred while validating login: {e}")
         finally:
             conn.close()
-    return None
+    return None, None, None
+
 
 # Function to hash passwords
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-
-import sqlite3
-
-# Connect to SQLite database (or create it if it doesn't exist)
-conn = sqlite3.connect('stock_control.db')
-c = conn.cursor()
+def get_user_full_name(email):
+    conn = create_connection()
+    user = conn.execute('''
+        SELECT CustomerName, CustomerSurname FROM tbl_Customer WHERE Email = ?
+    ''', (email,)).fetchone()
+    return user if user else (None, None)
 
 

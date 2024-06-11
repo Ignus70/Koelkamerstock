@@ -1,5 +1,5 @@
 import streamlit as st
-from database import create_connection, add_product, add_transaction, load_products, load_trans_types, load_data, get_balances, get_transactions, get_recon_data, add_customer, validate_login, hash_password
+from database import create_connection, add_product, add_transaction, load_products, load_trans_types, load_data, get_balances, get_transactions, get_recon_data, add_customer, validate_login, hash_password, get_user_full_name
 import pandas as pd
 
 if 'product_entries' not in st.session_state:
@@ -10,6 +10,10 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'user_id' not in st.session_state:
     st.session_state['user_id'] = None
+if 'customer_name' not in st.session_state:
+    st.session_state['customer_name'] = ""
+if 'customer_surname' not in st.session_state:
+    st.session_state['customer_surname'] = ""
 
 def load_user_credentials():
     conn = create_connection('stock_control.db')
@@ -26,7 +30,7 @@ def load_user_credentials():
 
 # Sidebar menu based on login state
 if st.session_state['logged_in']:
-    st.sidebar.title(f"Welcome, User {st.session_state['user_id']}")
+    st.sidebar.title(f"Welcome, {st.session_state['customer_name']} {st.session_state['customer_surname']}")
     option = st.sidebar.selectbox('Choose option:', ['Transaksie', 'Report', 'Nuwe Produk', 'Logout'])
 else:
     st.sidebar.title('Menu')
@@ -37,15 +41,16 @@ if option == 'Login':
     login_email = st.text_input('Email')
     login_password = st.text_input('Password', type='password')
     if st.button('Login'):
-        user_id = validate_login(login_email, login_password)
+        user_id, customer_name, customer_surname = validate_login(login_email, login_password)
         if user_id:
             st.session_state['user_id'] = user_id
             st.session_state['logged_in'] = True
+            st.session_state['customer_name'] = customer_name
+            st.session_state['customer_surname'] = customer_surname
             st.success('Login successful!')
             st.experimental_rerun()
         else:
             st.error('Invalid email or password')
-
 
 elif option == 'Sign Up':
     st.header('Sign Up')
@@ -55,23 +60,22 @@ elif option == 'Sign Up':
     signup_password = st.text_input('Password', type='password')
     signup_password_confirm = st.text_input('Confirm Password', type='password')
     if st.button('Sign Up'):
-        if signup_email.endswith('@ber.co.za'):
-            if signup_password == signup_password_confirm:
-                hashed_password = hash_password(signup_password)
-                user_id = add_customer(signup_name, signup_surname, signup_email, hashed_password)
-                if user_id:
-                    st.success('You have successfully signed up! Please log in.')
-                    st.experimental_rerun()
-                else:
-                    st.error('Error signing up. Please try again.')
+        if signup_password == signup_password_confirm:
+            hashed_password = hash_password(signup_password)
+            user_id = add_customer(signup_name, signup_surname, signup_email, hashed_password)
+            if user_id:
+                st.success('You have successfully signed up! Please log in.')
+                st.experimental_rerun()
             else:
-                st.error('Passwords do not match')
+                st.error('Error signing up. Please try again.')
         else:
-            st.error('Invalid email domain. You do not belong to Bergendal.')
+            st.error('Passwords do not match')
 
 elif option == 'Logout':
     st.session_state['logged_in'] = False
     st.session_state['user_id'] = None
+    st.session_state['customer_name'] = ""
+    st.session_state['customer_surname'] = ""
     st.success('Logged out successfully!')
     st.experimental_rerun()
 
