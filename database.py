@@ -40,7 +40,7 @@ def add_product(product_name):
     return None
 
 # Function to add a transaction
-def add_transaction(trans_type_id, product_ids, quantities):
+def add_transaction(trans_type_id, product_ids, quantities, account_ids):
     conn = create_connection('stock_control.db')
     customer_id = st.session_state.get('user_id')  # Get the logged-in user's ID from session state
     if not customer_id:
@@ -54,8 +54,12 @@ def add_transaction(trans_type_id, product_ids, quantities):
                 cur.execute(transaction_sql, (trans_type_id, datetime.now(), customer_id))
                 transaction_id = cur.lastrowid
 
-                product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Qty) VALUES(?,?,?)'''
-                cur.executemany(product_transaction_sql, [(transaction_id, pid, qty) for pid, qty in zip(product_ids, quantities)])
+                if trans_type_id == 3 or trans_type_id == 1:  # Assuming 3 is the ID for 'Stock Take'
+                    product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Qty) VALUES(?,?,?)'''
+                    cur.executemany(product_transaction_sql, [(transaction_id, pid, qty) for pid, qty in zip(product_ids, quantities)])
+                else:
+                    product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Account_ID_FK, Qty) VALUES(?,?,?,?)'''
+                    cur.executemany(product_transaction_sql, [(transaction_id, pid, aid, qty) for pid, aid, qty in zip(product_ids, account_ids, quantities)])
                 conn.commit()
                 return transaction_id
         except sqlite3.Error as e:
@@ -63,6 +67,11 @@ def add_transaction(trans_type_id, product_ids, quantities):
         finally:
             conn.close()
     return None
+
+# Function to load accounts
+def load_accounts():
+    conn = create_connection('stock_control.db')
+    return execute_query_fetch_all(conn, 'SELECT Account_ID, AccountName FROM tbl_Accounts')
 
 # Function to load transaction types
 def load_trans_types():
@@ -125,13 +134,25 @@ def get_balances():
 def get_transactions():
     conn = create_connection('stock_control.db')
     query = '''
-    SELECT p.Product, t.TransType, pt.Qty, tr.DateTime, 
-           c.CustomerName || ' ' || c.CustomerSurname AS Name
-    FROM tbl_ProductTransaction pt
-    JOIN tbl_Product p ON pt.Product_ID_FK = p.Product_ID
-    JOIN tbl_Transaction tr ON pt.Transaction_ID_FK = tr.Transaction_ID
-    JOIN tbl_TransType t ON tr.TransType_ID_FK = t.TransType_ID
-    JOIN tbl_Customer c ON tr.Customer_ID_FK = c.Customer_ID
+    SELECT 
+        p.Product, 
+        t.TransType, 
+        pt.Qty, 
+        tr.DateTime, 
+        a.AccountName, 
+        c.CustomerName || ' ' || c.CustomerSurname AS Name
+    FROM 
+        tbl_ProductTransaction pt
+    JOIN 
+        tbl_Product p ON pt.Product_ID_FK = p.Product_ID
+    JOIN 
+        tbl_Transaction tr ON pt.Transaction_ID_FK = tr.Transaction_ID
+    JOIN 
+        tbl_TransType t ON tr.TransType_ID_FK = t.TransType_ID
+    LEFT JOIN 
+        tbl_Customer c ON tr.Customer_ID_FK = c.Customer_ID
+    LEFT JOIN 
+        tbl_Accounts a ON pt.Account_ID_FK = a.Account_ID
     '''
     return execute_query_fetch_all(conn, query)
 

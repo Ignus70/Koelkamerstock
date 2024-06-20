@@ -1,5 +1,5 @@
 import streamlit as st
-from database import create_connection, add_product, add_transaction, load_products, load_trans_types, load_data, get_balances, get_transactions, get_recon_data, add_customer, validate_login, hash_password, get_user_full_name
+from database import create_connection, add_product, add_transaction, load_products, load_trans_types, load_data, get_balances, get_transactions, get_recon_data, add_customer, validate_login, hash_password, get_user_full_name, load_accounts
 import pandas as pd
 
 if 'product_entries' not in st.session_state:
@@ -83,42 +83,43 @@ elif 'logged_in' in st.session_state and st.session_state['logged_in']:
     if option == 'Transaksie':
         st.header('Create a Transaction')
         trans_types, product_list = load_data()
+        account_list = load_accounts()
         trans_type_id = st.selectbox('Transaction Type', trans_types, format_func=lambda x: x[1])
 
         # Buttons to add or remove products
         col1, col2 = st.columns(2)
         with col1:
             if st.button('Add another product'):
-                st.session_state.product_entries.append({'product_id': None, 'qty': 1})
+                st.session_state.product_entries.append({'product_id': None, 'qty': 1, 'account_id': None})
         with col2:
             if st.button('Remove last product') and len(st.session_state.product_entries) > 1:
                 st.session_state.product_entries.pop()
 
         # Dynamically manage product selections
         with st.form("transaction_form"):
-            # Loop through product entries and create input fields for each
             for i, entry in enumerate(st.session_state.product_entries):
-                cols = st.columns([3, 1])
+                cols = st.columns([3, 1, 3])
                 with cols[0]:
                     entry['product_id'] = st.selectbox('Select Product', product_list, format_func=lambda x: x[1], key=f"product_{i}")
                 with cols[1]:
                     entry['qty'] = st.number_input('Quantity', value=entry['qty'], min_value=1, key=f"qty_{i}")
+                if trans_type_id[1] == 'Uit':  # Check if transaction type is 'Uit'
+                    with cols[2]:
+                        account_names = [account[1] for account in account_list]
+                        selected_account = st.radio('Select Account', account_names, key=f"account_{i}")
+                        entry['account_id'] = [account[0] for account in account_list if account[1] == selected_account][0]
+                else:
+                    entry['account_id'] = None
 
             # Form submission button
             submitted = st.form_submit_button("Submit Transaction")
             if submitted:
                 product_ids = [entry['product_id'][0] for entry in st.session_state.product_entries]
                 quantities = [entry['qty'] for entry in st.session_state.product_entries]
-                try:
-                    transaction_id = add_transaction(trans_type_id[0], product_ids, quantities)
-                    if transaction_id:
-                        st.success('Transaction recorded successfully!')
-                        st.session_state.product_entries = [{'product_id': None, 'qty': 1}]  # Reset product entries after successful submission
-                    else:
-                        st.error('Failed to record transaction')
-                except ValueError as ve:
-                    st.error(str(ve))
-
+                account_ids = [entry['account_id'] for entry in st.session_state.product_entries if entry['account_id'] is not None]
+                add_transaction(trans_type_id[0], product_ids, quantities, account_ids)
+                st.success('Transaction recorded successfully!')
+                st.session_state.product_entries = []
 
     elif option == 'Nuwe Produk':
         st.header('Add a New Product')
@@ -138,7 +139,7 @@ elif 'logged_in' in st.session_state and st.session_state['logged_in']:
             st.table(df_balances)
         elif view_mode == 'Transaksie':
             transactions = get_transactions()
-            df_transactions = pd.DataFrame(transactions, columns=['Product', 'Transaction Type', 'Quantity', 'Date', 'Name'])
+            df_transactions = pd.DataFrame(transactions, columns=['Product', 'Transaction Type', 'Quantity', 'Date', 'Account', 'Name'])
             st.write("Transaction Details:")
             st.table(df_transactions)
         elif view_mode == 'Recon':
