@@ -102,7 +102,7 @@ elif 'logged_in' in st.session_state and st.session_state['logged_in']:
                 with cols[0]:
                     entry['product_id'] = st.selectbox('Select Product', product_list, format_func=lambda x: x[1], key=f"product_{i}")
                 with cols[1]:
-                    entry['qty'] = st.number_input('Quantity', value=entry['qty'], min_value=1, key=f"qty_{i}")
+                    entry['qty'] = st.number_input('Quantity', value=entry['qty'], min_value=0, key=f"qty_{i}")
                 if trans_type_id[1] == 'Uit':  # Check if transaction type is 'Uit'
                     with cols[2]:
                         account_names = [account[1] for account in account_list]
