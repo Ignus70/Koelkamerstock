@@ -44,7 +44,7 @@ def delete_transaction(transaction_id):
 
 # Main Streamlit app
 def main():
-    st.title("Database Operations")
+    st.title("Koelkamer Stock")
 
     # Sidebar menu based on login state
     if 'product_entries' not in st.session_state:
