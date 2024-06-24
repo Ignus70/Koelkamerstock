@@ -1,4 +1,4 @@
-from database import create_connection, add_product, add_transaction, load_products, load_trans_types, load_data, get_balances, get_transactions, get_recon_data, add_customer, validate_login, hash_password, get_user_full_name, load_accounts, update_transaction, update_product
+from database import create_connection, load_return_types, add_product, add_transaction, load_products, load_trans_types, load_data, get_balances, get_transactions, get_recon_data, add_customer, validate_login, hash_password, get_user_full_name, load_accounts, update_transaction, update_product
 import sqlite3
 import pandas as pd
 import streamlit as st
@@ -24,7 +24,7 @@ def download_database(db_file):
 
 # Function to delete a transaction
 def delete_transaction(transaction_id):
-    conn = create_connection()
+    conn = create_connection('stock_control.db')
     if conn:
         try:
             with conn:
@@ -44,11 +44,11 @@ def delete_transaction(transaction_id):
 
 # Main Streamlit app
 def main():
-    st.title("Koelkamer Stock")
+    st.title("Database Operations")
 
     # Sidebar menu based on login state
     if 'product_entries' not in st.session_state:
-        st.session_state.product_entries = [{'product_id': None, 'qty': 1}]
+        st.session_state.product_entries = [{'product_id': None, 'qty': 1, 'account_id': None, 'return_id': None}]
 
     # Initialize session state
     if 'logged_in' not in st.session_state:
@@ -123,17 +123,29 @@ def main():
             st.header('Create a Transaction')
             trans_types, product_list = load_data()
             account_list = load_accounts()
+            return_types = load_return_types()
             trans_type_id = st.selectbox('Transaction Type', trans_types, format_func=lambda x: x[1])
 
             with st.form("transaction_form"):
+                # Buttons to add or remove products
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.form_submit_button('Add another product'):
+                        st.session_state.product_entries.append({'product_id': None, 'qty': 1, 'account_id': None, 'return_id': None})
+                        st.rerun()
+                with col2:
+                    if st.form_submit_button('Remove last product') and len(st.session_state.product_entries) > 1:
+                        st.session_state.product_entries.pop()
+                        st.rerun()
+
                 # Dynamically manage product selections
                 for i, entry in enumerate(st.session_state.product_entries):
-                    cols = st.columns([3, 1, 3])
+                    cols = st.columns([3, 1, 3, 2])
                     with cols[0]:
                         entry['product_id'] = st.selectbox('Select Product', product_list, format_func=lambda x: x[1], key=f"product_{i}")
                     with cols[1]:
                         entry['qty'] = st.number_input('Quantity', value=entry['qty'], min_value=0, key=f"qty_{i}")
-                    if trans_type_id[1] == 'Uit':  # Check if transaction type is 'Uit'
+                    if trans_type_id[1] in ['Uit', 'Return']:  # Check if transaction type is 'Uit' or 'Return'
                         with cols[2]:
                             account_names = [account[1] for account in account_list]
                             selected_account = st.radio('Select Account', account_names, key=f"account_{i}")
@@ -141,16 +153,13 @@ def main():
                     else:
                         entry['account_id'] = None
 
-                # Buttons to add or remove products
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.form_submit_button('Add another product'):
-                        st.session_state.product_entries.append({'product_id': None, 'qty': 1, 'account_id': None})
-                        st.experimental_rerun()
-                with col2:
-                    if st.form_submit_button('Remove last product') and len(st.session_state.product_entries) > 1:
-                        st.session_state.product_entries.pop()
-                        st.experimental_rerun()
+                    if trans_type_id[1] == 'Return':  # Check if transaction type is 'Return'
+                        with cols[3]:
+                            return_names = [return_type[1] for return_type in return_types]
+                            selected_return = st.radio('Select Return Type', return_names, key=f"return_{i}")
+                            entry['return_id'] = [return_type[0] for return_type in return_types if return_type[1] == selected_return][0]
+                    else:
+                        entry['return_id'] = None
 
                 # Form submission button
                 submitted = st.form_submit_button("Submit Transaction")
@@ -158,7 +167,8 @@ def main():
                     product_ids = [entry['product_id'][0] for entry in st.session_state.product_entries]
                     quantities = [entry['qty'] for entry in st.session_state.product_entries]
                     account_ids = [entry['account_id'] for entry in st.session_state.product_entries if entry['account_id'] is not None]
-                    add_transaction(trans_type_id[0], product_ids, quantities, account_ids)
+                    return_ids = [entry['return_id'] for entry in st.session_state.product_entries if entry['return_id'] is not None]
+                    add_transaction(trans_type_id[0], product_ids, quantities, account_ids, return_ids)
                     st.success('Transaction recorded successfully!')
                     st.session_state.product_entries = []
 
@@ -209,13 +219,13 @@ def main():
                 st.table(df_balances)
             elif view_mode == 'Transaksie':
                 transactions = get_transactions()
-                df_transactions = pd.DataFrame(transactions, columns=['Trans_ID', 'Product', 'TransType', 'Quantity', 'Date', 'Account', 'Name'])
+                df_transactions = pd.DataFrame(transactions, columns=['Trans_ID', 'Product', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType'])
                 df_transactions = add_week_numbers(df_transactions, 'Date')
 
                 st.write("Transaction Details:")
 
                 # Filters
-                filter_columns = ['Product', 'Name', 'Account', 'TransType', 'weekNo']
+                filter_columns = ['Product', 'Name', 'Account', 'TransType', 'ReturnType', 'weekNo']
                 filters = add_filters(df_transactions, filter_columns)
                 df_filtered = apply_filters(df_transactions, filters)
 
@@ -236,7 +246,7 @@ def main():
             elif view_mode == 'Recon':
                 st.write("Recon View:")
                 recon_data = get_recon_data()
-                df_recon = pd.DataFrame(recon_data, columns=['Product', 'transdate_Start', 'transdate_End', 'Qty_In', 'Qty_Uit', 'Previous Balance', 'Latest Balance', 'Deviation'])
+                df_recon = pd.DataFrame(recon_data, columns=['Product', 'transdate_Start', 'transdate_End', 'Qty_In', 'Qty_Uit', 'Qty_Returned', 'Previous Balance', 'Latest Balance', 'Deviation',])
                 df_recon = add_week_numbers(df_recon, 'transdate_End')
 
                 st.write("Product Recon Balances:")
@@ -273,7 +283,7 @@ def add_filters(df, filter_columns):
             unique_values = ["All"] + list(df[col].fillna('None').unique())
             if f"filter_{col}" not in st.session_state:
                 st.session_state[f"filter_{col}"] = "All"
-            filters[col] = st.selectbox(f"Filter by {col}", unique_values, key=f"filter_{col}")
+            filters[col] = st.selectbox(f"Filter {col}", unique_values, key=f"filter_{col}")
 
     return filters
 
@@ -300,4 +310,3 @@ def paginate_dataframe(df, page_size):
 # Run the app
 if __name__ == "__main__":
     main()
-

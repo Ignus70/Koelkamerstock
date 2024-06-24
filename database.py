@@ -22,6 +22,11 @@ def execute_query_fetch_all(conn, query, params=()):
         print(f"An error occurred: {e}")
     return []
 
+# Function to load return types
+def load_return_types():
+    conn = create_connection('stock_control.db')
+    return execute_query_fetch_all(conn, 'SELECT Returns_ID, ReturnType FROM tbl_Returns')
+
 # Function to add a new product
 def add_product(product_name):
     conn = create_connection('stock_control.db')
@@ -40,7 +45,7 @@ def add_product(product_name):
     return None
 
 # Function to add a transaction
-def add_transaction(trans_type_id, product_ids, quantities, account_ids):
+def add_transaction(trans_type_id, product_ids, quantities, account_ids=None, return_ids=None):
     conn = create_connection('stock_control.db')
     customer_id = st.session_state.get('user_id')  # Get the logged-in user's ID from session state
     if not customer_id:
@@ -54,12 +59,16 @@ def add_transaction(trans_type_id, product_ids, quantities, account_ids):
                 cur.execute(transaction_sql, (trans_type_id, datetime.now(), customer_id))
                 transaction_id = cur.lastrowid
 
-                if trans_type_id == 3 or trans_type_id == 1:  # Assuming 3 is the ID for 'Stock Take'
+                if trans_type_id in [1, 3]:  # 'In' or 'Stock Take'
                     product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Qty) VALUES(?,?,?)'''
                     cur.executemany(product_transaction_sql, [(transaction_id, pid, qty) for pid, qty in zip(product_ids, quantities)])
-                else:
+                elif trans_type_id == 2:  # 'Uit'
                     product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Account_ID_FK, Qty) VALUES(?,?,?,?)'''
                     cur.executemany(product_transaction_sql, [(transaction_id, pid, aid, qty) for pid, aid, qty in zip(product_ids, account_ids, quantities)])
+                elif trans_type_id == 4:  # 'Return'
+                    product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Account_ID_FK, Qty, Return_ID_FK) VALUES(?,?,?,?,?)'''
+                    cur.executemany(product_transaction_sql, [(transaction_id, pid, aid, qty, rid) for pid, aid, qty, rid in zip(product_ids, account_ids, quantities, return_ids)])
+                
                 conn.commit()
                 return transaction_id
         except sqlite3.Error as e:
@@ -67,6 +76,7 @@ def add_transaction(trans_type_id, product_ids, quantities, account_ids):
         finally:
             conn.close()
     return None
+
 
 # Function to load accounts
 def load_accounts():
@@ -106,24 +116,32 @@ def get_balances():
                        SUM(pt.Qty) AS StocktakeQty
                 FROM tbl_ProductTransaction pt
                 JOIN tbl_Transaction tr ON pt.Transaction_ID_FK = tr.Transaction_ID
-                JOIN tbl_TransType tt ON tr.TransType_ID_FK = tt.TransType_ID
                 JOIN LatestStocktake lst ON pt.Product_ID_FK = lst.Product_ID_FK
                                          AND tr.DateTime = lst.LatestStocktakeDate
+                GROUP BY pt.Product_ID_FK
+            ),
+            TransactionsAfterStocktake AS (
+                SELECT pt.Product_ID_FK,
+                       SUM(CASE WHEN t.TransType = 'In' THEN pt.Qty ELSE 0 END) AS Qty_In,
+                       SUM(CASE WHEN t.TransType = 'Uit' THEN -pt.Qty ELSE 0 END) AS Qty_Out,
+                       SUM(CASE WHEN t.TransType = 'Return' AND r.ReturnType = 'Hergebruik' THEN pt.Qty ELSE 0 END) AS Qty_Return
+                FROM tbl_ProductTransaction pt
+                JOIN tbl_Transaction tr ON pt.Transaction_ID_FK = tr.Transaction_ID
+                JOIN tbl_TransType t ON tr.TransType_ID_FK = t.TransType_ID
+                LEFT JOIN tbl_Returns r ON pt.Return_ID_FK = r.Returns_ID
+                WHERE tr.DateTime > (SELECT MAX(tr2.DateTime) FROM tbl_Transaction tr2 
+                                     JOIN tbl_TransType tt2 ON tr2.TransType_ID_FK = tt2.TransType_ID
+                                     WHERE tt2.TransType = 'Stock Take' AND tr2.Customer_ID_FK = tr.Customer_ID_FK)
                 GROUP BY pt.Product_ID_FK
             )
             SELECT p.Product,
                    COALESCE(sb.StocktakeQty, 0) +
-                   SUM(CASE WHEN t.TransType = 'In' THEN pt.Qty
-                            WHEN t.TransType = 'Uit' THEN -pt.Qty
-                            ELSE 0 END) AS Balance
+                   COALESCE(ta.Qty_In, 0) +
+                   COALESCE(ta.Qty_Return, 0) +
+                   COALESCE(ta.Qty_Out, 0) AS Balance
             FROM tbl_Product p
-            LEFT JOIN tbl_ProductTransaction pt ON p.Product_ID = pt.Product_ID_FK
-            LEFT JOIN tbl_Transaction tr ON pt.Transaction_ID_FK = tr.Transaction_ID
-            LEFT JOIN tbl_TransType t ON tr.TransType_ID_FK = t.TransType_ID
             LEFT JOIN StocktakeBalance sb ON p.Product_ID = sb.Product_ID_FK
-            WHERE tr.DateTime > COALESCE((SELECT MAX(lst.LatestStocktakeDate) FROM LatestStocktake lst WHERE lst.Product_ID_FK = p.Product_ID), '1970-01-01')
-            OR t.TransType = 'Stock Take'
-            GROUP BY p.Product
+            LEFT JOIN TransactionsAfterStocktake ta ON p.Product_ID = ta.Product_ID_FK
             '''
             return execute_query_fetch_all(conn, query)
         finally:
@@ -141,7 +159,8 @@ def get_transactions():
         pt.Qty, 
         tr.DateTime, 
         a.AccountName, 
-        c.CustomerName || ' ' || c.CustomerSurname AS Name
+        c.CustomerName || ' ' || c.CustomerSurname AS Name,
+        r.ReturnType
     FROM 
         tbl_ProductTransaction pt
     JOIN 
@@ -154,9 +173,10 @@ def get_transactions():
         tbl_Customer c ON tr.Customer_ID_FK = c.Customer_ID
     LEFT JOIN 
         tbl_Accounts a ON pt.Account_ID_FK = a.Account_ID
+    LEFT JOIN 
+        tbl_Returns r ON pt.Return_ID_FK = r.Returns_ID
     '''
     return execute_query_fetch_all(conn, query)
-
 
 
 # Function to get recon data
@@ -197,10 +217,12 @@ def get_recon_data():
             TransactionsInRange AS (
                 SELECT pt.Product_ID_FK,
                        SUM(CASE WHEN t.TransType = 'In' THEN pt.Qty ELSE 0 END) as Qty_In,
-                       SUM(CASE WHEN t.TransType = 'Uit' THEN pt.Qty ELSE 0 END) as Qty_Uit
+                       SUM(CASE WHEN t.TransType = 'Uit' THEN pt.Qty ELSE 0 END) as Qty_Uit,
+                       SUM(CASE WHEN t.TransType = 'Return' AND r.ReturnType = 'Hergebruik' THEN pt.Qty ELSE 0 END) AS Qty_Return
                 FROM tbl_ProductTransaction pt
                 JOIN tbl_Transaction tr ON pt.Transaction_ID_FK = tr.Transaction_ID
                 JOIN tbl_TransType t ON tr.TransType_ID_FK = t.TransType_ID
+                LEFT JOIN tbl_Returns r ON pt.Return_ID_FK = r.Returns_ID
                 JOIN LatestStocktake lst ON pt.Product_ID_FK = lst.Product_ID_FK
                 JOIN PreviousStocktake pst ON pt.Product_ID_FK = pst.Product_ID_FK
                 WHERE tr.DateTime > pst.PreviousStocktakeDate AND tr.DateTime <= lst.LatestStocktakeDate
@@ -211,9 +233,10 @@ def get_recon_data():
                    lst.LatestStocktakeDate AS transdate_End,
                    trir.Qty_In,
                    trir.Qty_Uit,
+                   trir.Qty_Return,
                    COALESCE(pstb.StocktakeQty, 0) AS PreviousBalance,
                    COALESCE(lstb.StocktakeQty, 0) AS LatestBalance,
-                   (COALESCE(pstb.StocktakeQty, 0) + COALESCE(trir.Qty_In, 0) - COALESCE(trir.Qty_Uit, 0) - COALESCE(lstb.StocktakeQty, 0)) AS Deviation
+                   -1 * (COALESCE(pstb.StocktakeQty, 0) + COALESCE(trir.Qty_In, 0) - COALESCE(trir.Qty_Uit, 0) + COALESCE(trir.Qty_Return, 0) - COALESCE(lstb.StocktakeQty, 0)) AS Deviation
             FROM tbl_Product p
             LEFT JOIN LatestStocktake lst ON p.Product_ID = lst.Product_ID_FK
             LEFT JOIN PreviousStocktake pst ON p.Product_ID = pst.Product_ID_FK
@@ -226,6 +249,7 @@ def get_recon_data():
         finally:
             conn.close()
     return []
+
 
 # Function to add a new customer
 def add_customer(name, surname, email, hashed_password):
