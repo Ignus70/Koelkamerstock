@@ -22,19 +22,29 @@ def download_database(db_file):
     href = f'<a href="data:file/sqlite;base64,{b64}" download="{db_file}">Download {db_file}</a>'
     return href
 
-# Example function to test connection and print tables (optional)
-def test_connection():
+# Function to delete a transaction
+def delete_transaction(transaction_id):
     conn = create_connection()
     if conn:
-        tables = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table';", conn)
-        st.write(tables)
-        conn.close()
-    else:
-        st.write("Failed to connect to the database.")
+        try:
+            with conn:
+                sql = 'DELETE FROM tbl_ProductTransaction WHERE Transaction_ID_FK = ?'
+                cur = conn.cursor()
+                cur.execute(sql, (transaction_id,))
+                conn.commit()
+
+                sql = 'DELETE FROM tbl_Transaction WHERE Transaction_ID = ?'
+                cur.execute(sql, (transaction_id,))
+                conn.commit()
+            st.success("Transaction deleted successfully!")
+        except sqlite3.Error as e:
+            st.error(f"An error occurred while deleting transaction: {e}")
+        finally:
+            conn.close()
 
 # Main Streamlit app
 def main():
-    st.title("Koelkamer Stock")
+    st.title("Database Operations")
 
     # Sidebar menu based on login state
     if 'product_entries' not in st.session_state:
@@ -51,6 +61,10 @@ def main():
         st.session_state['customer_surname'] = ""
     if 'is_editor' not in st.session_state:
         st.session_state['is_editor'] = False
+    if 'view_mode' not in st.session_state:
+        st.session_state['view_mode'] = 'Balans'
+    if 'edited_rows' not in st.session_state:
+        st.session_state['edited_rows'] = {}
 
     if st.session_state['logged_in']:
         st.sidebar.title(f"Welcome, {st.session_state['customer_name']} {st.session_state['customer_surname']}")
@@ -185,10 +199,6 @@ def main():
                 if st.button("Recon"):
                     st.session_state.view_mode = 'Recon'
 
-            # Default view_mode if not set
-            if 'view_mode' not in st.session_state:
-                st.session_state.view_mode = 'Balans'
-
             # Check the current view mode and display corresponding data
             view_mode = st.session_state.view_mode
 
@@ -290,3 +300,4 @@ def paginate_dataframe(df, page_size):
 # Run the app
 if __name__ == "__main__":
     main()
+
