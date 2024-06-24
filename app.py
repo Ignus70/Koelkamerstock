@@ -88,7 +88,7 @@ if option == 'Login':
             st.session_state['logged_in'] = True
             st.session_state['customer_name'] = customer_name
             st.session_state['customer_surname'] = customer_surname
-            st.session_state['is_editor'] = login_email == 'systems@ber.co.za'
+            st.session_state['is_editor'] = login_email == 'systems@ber.co.za' or login_email == 'data@ber.co.za'
             st.success('Login successful!')
             st.experimental_rerun()
         else:
