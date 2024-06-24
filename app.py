@@ -1,5 +1,5 @@
 import streamlit as st
-from database import create_connection, add_product, add_transaction, load_products, load_trans_types, load_data, get_balances, get_transactions, get_recon_data, add_customer, validate_login, hash_password, get_user_full_name, load_accounts
+from database import create_connection, add_product, add_transaction, load_products, load_trans_types, load_data, get_balances, get_transactions, get_recon_data, add_customer, validate_login, hash_password, get_user_full_name, load_accounts, update_transaction, update_product
 import pandas as pd
 
 if 'product_entries' not in st.session_state:
@@ -14,6 +14,8 @@ if 'customer_name' not in st.session_state:
     st.session_state['customer_name'] = ""
 if 'customer_surname' not in st.session_state:
     st.session_state['customer_surname'] = ""
+if 'is_editor' not in st.session_state:
+    st.session_state['is_editor'] = False
 
 def load_user_credentials():
     conn = create_connection('stock_control.db')
@@ -27,6 +29,45 @@ def load_user_credentials():
         return credentials
     finally:
         conn.close()
+
+def add_filters(df, filter_columns):
+    filters = {}
+    clear_filters = st.button("Clear Filters")
+
+    if clear_filters:
+        for col in filter_columns:
+            st.session_state[f"filter_{col}"] = "All"
+        st.experimental_rerun()
+
+    cols = st.columns(len(filter_columns))  # Adjusted columns to align with filter dropdowns
+    for idx, col in enumerate(filter_columns):
+        with cols[idx]:
+            unique_values = ["All"] + list(df[col].fillna('None').unique())
+            if f"filter_{col}" not in st.session_state:
+                st.session_state[f"filter_{col}"] = "All"
+            filters[col] = st.selectbox(f"Filter by {col}", unique_values, key=f"filter_{col}")
+
+    return filters
+
+def apply_filters(df, filters):
+    for col, value in filters.items():
+        if value != "All":
+            if value == 'None':
+                df = df[df[col].isna()]
+            else:
+                df = df[df[col] == value]
+    return df
+
+def add_week_numbers(df, date_column):
+    df['weekNo'] = pd.to_datetime(df[date_column]).dt.isocalendar().week
+    return df
+
+def paginate_dataframe(df, page_size):
+    total_rows = len(df)
+    page = st.number_input('Page', min_value=1, max_value=(total_rows // page_size) + 1, value=1)
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+    return df[start_index:end_index]
 
 # Sidebar menu based on login state
 if st.session_state['logged_in']:
@@ -47,6 +88,7 @@ if option == 'Login':
             st.session_state['logged_in'] = True
             st.session_state['customer_name'] = customer_name
             st.session_state['customer_surname'] = customer_surname
+            st.session_state['is_editor'] = login_email == 'systems@ber.co.za' or login_email == 'data@ber.co.za'
             st.success('Login successful!')
             st.experimental_rerun()
         else:
@@ -76,6 +118,7 @@ elif option == 'Logout':
     st.session_state['user_id'] = None
     st.session_state['customer_name'] = ""
     st.session_state['customer_surname'] = ""
+    st.session_state['is_editor'] = False
     st.success('Logged out successfully!')
     st.experimental_rerun()
 
@@ -86,17 +129,8 @@ elif 'logged_in' in st.session_state and st.session_state['logged_in']:
         account_list = load_accounts()
         trans_type_id = st.selectbox('Transaction Type', trans_types, format_func=lambda x: x[1])
 
-        # Buttons to add or remove products
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button('Add another product'):
-                st.session_state.product_entries.append({'product_id': None, 'qty': 1, 'account_id': None})
-        with col2:
-            if st.button('Remove last product') and len(st.session_state.product_entries) > 1:
-                st.session_state.product_entries.pop()
-
-        # Dynamically manage product selections
         with st.form("transaction_form"):
+            # Dynamically manage product selections
             for i, entry in enumerate(st.session_state.product_entries):
                 cols = st.columns([3, 1, 3])
                 with cols[0]:
@@ -110,6 +144,17 @@ elif 'logged_in' in st.session_state and st.session_state['logged_in']:
                         entry['account_id'] = [account[0] for account in account_list if account[1] == selected_account][0]
                 else:
                     entry['account_id'] = None
+
+            # Buttons to add or remove products
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button('Add another product'):
+                    st.session_state.product_entries.append({'product_id': None, 'qty': 1, 'account_id': None})
+                    st.experimental_rerun()
+            with col2:
+                if st.form_submit_button('Remove last product') and len(st.session_state.product_entries) > 1:
+                    st.session_state.product_entries.pop()
+                    st.experimental_rerun()
 
             # Form submission button
             submitted = st.form_submit_button("Submit Transaction")
@@ -127,10 +172,43 @@ elif 'logged_in' in st.session_state and st.session_state['logged_in']:
         if st.button('Add Product'):
             add_product(product_name)
             st.success('Product added successfully!')
+        
+        # Display all products in a table
+        products = load_products()
+        df_products = pd.DataFrame(products, columns=['Product_ID', 'Product'])
+        
+        st.write("All Products:")
+        
+        if st.session_state['is_editor']:
+            edited_df = st.data_editor(df_products, num_rows="dynamic")
+
+            # Save changes to the database
+            if st.button("Save Changes"):
+                for index, row in edited_df.iterrows():
+                    update_product(row['Product_ID'], row['Product'])
+                st.success("Changes saved successfully!")
+        else:
+            st.table(df_products)
 
     elif option == 'Report':
         st.header('Product Balances')
-        view_mode = st.radio("View", ['Balans', 'Transaksie', 'Recon'])
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("Balans"):
+                st.session_state.view_mode = 'Balans'
+        with col2:
+            if st.button("Transaksie"):
+                st.session_state.view_mode = 'Transaksie'
+        with col3:
+            if st.button("Recon"):
+                st.session_state.view_mode = 'Recon'
+
+        # Default view_mode if not set
+        if 'view_mode' not in st.session_state:
+            st.session_state.view_mode = 'Balans'
+
+        # Check the current view mode and display corresponding data
+        view_mode = st.session_state.view_mode
 
         if view_mode == 'Balans':
             balances = get_balances()
@@ -139,15 +217,80 @@ elif 'logged_in' in st.session_state and st.session_state['logged_in']:
             st.table(df_balances)
         elif view_mode == 'Transaksie':
             transactions = get_transactions()
-            df_transactions = pd.DataFrame(transactions, columns=['Product', 'Transaction Type', 'Quantity', 'Date', 'Account', 'Name'])
+            df_transactions = pd.DataFrame(transactions, columns=['Trans_ID', 'Product', 'TransType', 'Quantity', 'Date', 'Account', 'Name'])
+            df_transactions = add_week_numbers(df_transactions, 'Date')
+
             st.write("Transaction Details:")
-            st.table(df_transactions)
+
+            # Filters
+            filter_columns = ['Product', 'Name', 'Account', 'TransType', 'weekNo']
+            filters = add_filters(df_transactions, filter_columns)
+            df_filtered = apply_filters(df_transactions, filters)
+
+            # Sorting and Pagination
+            df_filtered = df_filtered.sort_values(by='Date', ascending=False)
+            df_paginated = paginate_dataframe(df_filtered, page_size=10)
+
+            edited_df = st.data_editor(df_paginated, num_rows="dynamic")
+
+            # Save changes to the database
+            if st.session_state['is_editor'] and st.button("Save Changes"):
+                edited_rows = st.session_state["edited_rows"]
+                for row_index, changes in edited_rows.items():
+                    row = edited_df.loc[row_index]
+                    update_transaction(row['Transaction_ID'], changes.get('Product', row['Product']), changes.get('Transaction Type', row['Transaction Type']), changes.get('Quantity', row['Quantity']))
+                st.success("Changes saved successfully!")
+
         elif view_mode == 'Recon':
             st.write("Recon View:")
             recon_data = get_recon_data()
             df_recon = pd.DataFrame(recon_data, columns=['Product', 'transdate_Start', 'transdate_End', 'Qty_In', 'Qty_Uit', 'Previous Balance', 'Latest Balance', 'Deviation'])
+            df_recon = add_week_numbers(df_recon, 'transdate_End')
+
             st.write("Product Recon Balances:")
-            st.table(df_recon)
+
+            # Filters
+            filter_columns = ['Product', 'weekNo']
+            filters = add_filters(df_recon, filter_columns)
+            df_filtered = apply_filters(df_recon, filters)
+
+            # Sorting and Pagination
+            df_filtered = df_filtered.sort_values(by='transdate_End', ascending=False)
+            df_paginated = paginate_dataframe(df_filtered, page_size=10)
+
+            st.table(df_paginated)
 
 else:
     st.warning('Please log in to access this section.')
+
+def add_filters(df, filter_columns):
+    filters = {}
+    clear_filters = st.button("Clear Filters")
+
+    if clear_filters:
+        for col in filter_columns:
+            st.session_state[f"filter_{col}"] = "All"
+        st.experimental_rerun()
+
+    cols = st.columns(len(filter_columns))  # Adjusted columns to align with filter dropdowns
+    for idx, col in enumerate(filter_columns):
+        with cols[idx]:
+            unique_values = ["All"] + list(df[col].fillna('None').unique())
+            if f"filter_{col}" not in st.session_state:
+                st.session_state[f"filter_{col}"] = "All"
+            filters[col] = st.selectbox(f"Filter by {col}", unique_values, key=f"filter_{col}")
+
+    return filters
+
+def apply_filters(df, filters):
+    for col, value in filters.items():
+        if value != "All":
+            if value == 'None':
+                df = df[df[col].isna()]
+            else:
+                df = df[df[col] == value]
+    return df
+
+def add_week_numbers(df, date_column):
+    df['weekNo'] = pd.to_datetime(df[date_column]).dt.isocalendar().week
+    return df

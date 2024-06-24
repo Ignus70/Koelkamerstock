@@ -135,6 +135,7 @@ def get_transactions():
     conn = create_connection('stock_control.db')
     query = '''
     SELECT 
+        pt.Transaction_ID_FK AS Transaction_ID,
         p.Product, 
         t.TransType, 
         pt.Qty, 
@@ -155,6 +156,7 @@ def get_transactions():
         tbl_Accounts a ON pt.Account_ID_FK = a.Account_ID
     '''
     return execute_query_fetch_all(conn, query)
+
 
 
 # Function to get recon data
@@ -270,4 +272,43 @@ def get_user_full_name(email):
     ''', (email,)).fetchone()
     return user if user else (None, None)
 
+# Function to update a transaction
+def update_transaction(transaction_id, product_id, trans_type_id, qty):
+    conn = create_connection('stock_control.db')
+    if conn:
+        try:
+            with conn:
+                sql = '''
+                UPDATE tbl_ProductTransaction
+                SET Product_ID_FK = ?, Qty = ?
+                WHERE Transaction_ID_FK = ?
+                '''
+                cur = conn.cursor()
+                cur.execute(sql, (product_id, qty, transaction_id))
+                conn.commit()
 
+                sql = '''
+                UPDATE tbl_Transaction
+                SET TransType_ID_FK = ?
+                WHERE Transaction_ID = ?
+                '''
+                cur.execute(sql, (trans_type_id, transaction_id))
+                conn.commit()
+        except sqlite3.Error as e:
+            print(f"An error occurred while updating transaction: {e}")
+        finally:
+            conn.close()
+
+def update_product(product_id, product_name):
+    conn = create_connection('stock_control.db')
+    if conn:
+        try:
+            with conn:
+                sql = '''UPDATE tbl_Product SET Product = ? WHERE Product_ID = ?'''
+                cur = conn.cursor()
+                cur.execute(sql, (product_name, product_id))
+                conn.commit()
+        except sqlite3.Error as e:
+            print(f"An error occurred while updating product: {e}")
+        finally:
+            conn.close()
