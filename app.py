@@ -28,19 +28,30 @@ def delete_transaction(transaction_id):
     if conn:
         try:
             with conn:
-                sql = 'DELETE FROM tbl_ProductTransaction WHERE Transaction_ID_FK = ?'
                 cur = conn.cursor()
-                cur.execute(sql, (transaction_id,))
-                conn.commit()
 
+                # Start a transaction
+                cur.execute('BEGIN')
+
+                # Delete from tbl_ProductTransaction
+                sql = 'DELETE FROM tbl_ProductTransaction WHERE Transaction_ID_FK = ?'
+                cur.execute(sql, (transaction_id,))
+
+                # Delete from tbl_Transaction
                 sql = 'DELETE FROM tbl_Transaction WHERE Transaction_ID = ?'
                 cur.execute(sql, (transaction_id,))
+
+                # Commit the transaction
                 conn.commit()
+
             st.success("Transaction deleted successfully!")
         except sqlite3.Error as e:
+            # Rollback in case of error
+            conn.rollback()
             st.error(f"An error occurred while deleting transaction: {e}")
         finally:
             conn.close()
+
 
 # Main Streamlit app
 def main():
