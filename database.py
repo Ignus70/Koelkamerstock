@@ -2,6 +2,7 @@ import sqlite3
 from datetime import datetime
 import hashlib
 import streamlit as st
+import pandas as pd
 
 # Function to connect to the SQLite database
 def create_connection(db_file='stock_control.db'):
@@ -45,8 +46,7 @@ def add_product(product_name):
     return None
 
 # Function to add a transaction
-# Function to add a transaction
-def add_transaction(trans_type_id, product_ids, quantities, account_ids, return_ids):
+def add_transaction(trans_type_id, product_ids, quantities, account_ids, return_ids, po_numbers):
     conn = create_connection('stock_control.db')
     customer_id = st.session_state.get('user_id')  # Get the logged-in user's ID from session state
     if not customer_id:
@@ -64,11 +64,11 @@ def add_transaction(trans_type_id, product_ids, quantities, account_ids, return_
                     product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Qty) VALUES(?,?,?)'''
                     cur.executemany(product_transaction_sql, [(transaction_id, pid, qty) for pid, qty in zip(product_ids, quantities)])
                 elif trans_type_id == 2:  # 'Uit'
-                    product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Account_ID_FK, Qty) VALUES(?,?,?,?)'''
-                    cur.executemany(product_transaction_sql, [(transaction_id, pid, aid, qty) for pid, aid, qty in zip(product_ids, account_ids, quantities)])
+                    product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Account_ID_FK, Qty, PONumber) VALUES(?,?,?,?,?)'''
+                    cur.executemany(product_transaction_sql, [(transaction_id, pid, aid, qty, po) for pid, aid, qty, po in zip(product_ids, account_ids, quantities, po_numbers)])
                 elif trans_type_id == 4:  # 'Return'
-                    product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Account_ID_FK, Qty, Return_ID_FK) VALUES(?,?,?,?,?)'''
-                    cur.executemany(product_transaction_sql, [(transaction_id, pid, aid, qty, rid) for pid, aid, qty, rid in zip(product_ids, account_ids, quantities, return_ids)])
+                    product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Account_ID_FK, Qty, Return_ID_FK, PONumber) VALUES(?,?,?,?,?,?)'''
+                    cur.executemany(product_transaction_sql, [(transaction_id, pid, aid, qty, rid, po) for pid, aid, qty, rid, po in zip(product_ids, account_ids, quantities, return_ids, po_numbers)])
                 conn.commit()
                 return transaction_id
         except sqlite3.Error as e:
@@ -76,6 +76,7 @@ def add_transaction(trans_type_id, product_ids, quantities, account_ids, return_
         finally:
             conn.close()
     return None
+
 
 # Function to load accounts
 def load_accounts():
@@ -154,6 +155,7 @@ def get_transactions():
         a.AccountName AS Account, 
         c.CustomerName || ' ' || c.CustomerSurname AS Name,
         r.ReturnType,
+        pt.PONumber,
         strftime('%W', tr.DateTime) AS weekNo
     FROM 
         tbl_ProductTransaction pt
@@ -174,7 +176,9 @@ def get_transactions():
     cur.execute(query)
     transactions = cur.fetchall()
     conn.close()
+    print(transactions)  # Debug statement to check if transactions are fetched
     return transactions
+
 
 
 
@@ -295,31 +299,42 @@ def get_user_full_name(email):
     return user if user else (None, None)
 
 # Function to update a transaction
-def update_transaction(transaction_id, product_id, trans_type_id, qty):
+def update_transaction(transaction_id, product_id, trans_type_id, account_id, date, qty, return_id, po_number):
     conn = create_connection('stock_control.db')
     if conn:
         try:
             with conn:
                 sql = '''
                 UPDATE tbl_ProductTransaction
-                SET Product_ID_FK = ?, Qty = ?
-                WHERE Transaction_ID_FK = ?
+                SET Product_ID_FK = ?, Qty = ?, Account_ID_FK = ?, Return_ID_FK = ?, PONumber = ?
+                WHERE Transaction_ID_FK = ? AND Product_ID_FK = ?
                 '''
                 cur = conn.cursor()
-                cur.execute(sql, (product_id, qty, transaction_id))
+                cur.execute(sql, (product_id, qty, account_id, return_id, po_number, transaction_id, product_id))
                 conn.commit()
 
                 sql = '''
                 UPDATE tbl_Transaction
-                SET TransType_ID_FK = ?
+                SET TransType_ID_FK = ?, DateTime = ?
                 WHERE Transaction_ID = ?
                 '''
-                cur.execute(sql, (trans_type_id, transaction_id))
+                cur.execute(sql, (trans_type_id, date, transaction_id))
                 conn.commit()
+                print(trans_type_id)
         except sqlite3.Error as e:
             st.error(f"An error occurred while updating transaction: {e}")
         finally:
             conn.close()
+
+def load_transaction_types():
+    conn = create_connection('stock_control.db')
+    if conn:
+        query = 'SELECT TransType_ID, TransType FROM tbl_TransType'
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df
+    else:
+        return pd.DataFrame()
 
 def update_product(product_id, product_name):
     conn = create_connection('stock_control.db')
@@ -341,11 +356,14 @@ def delete_transaction(transaction_id, product_id):
     if conn:
         try:
             with conn:
+                cur = conn.cursor()
+
+                # Start a transaction
+                cur.execute('BEGIN')
+
                 # Delete from tbl_ProductTransaction based on Transaction_ID and Product_ID
                 sql = 'DELETE FROM tbl_ProductTransaction WHERE Transaction_ID_FK = ? AND Product_ID_FK = ?'
-                cur = conn.cursor()
                 cur.execute(sql, (transaction_id, product_id))
-                conn.commit()
 
                 # Check if there are any remaining entries for the transaction
                 cur.execute('SELECT COUNT(*) FROM tbl_ProductTransaction WHERE Transaction_ID_FK = ?', (transaction_id,))
@@ -355,13 +373,18 @@ def delete_transaction(transaction_id, product_id):
                 if count == 0:
                     sql = 'DELETE FROM tbl_Transaction WHERE Transaction_ID = ?'
                     cur.execute(sql, (transaction_id,))
-                    conn.commit()
-                
+
+                # Commit the transaction
+                conn.commit()
+
             st.success("Transaction deleted successfully!")
         except sqlite3.Error as e:
+            # Rollback in case of error
+            conn.rollback()
             st.error(f"An error occurred while deleting transaction: {e}")
         finally:
             conn.close()
+
 
 def get_product_id_by_name(product_name):
     conn = create_connection('stock_control.db')
@@ -383,3 +406,78 @@ def get_trans_type_id_by_name(trans_type_name):
         finally:
             conn.close()
     return None
+
+def get_trans_type_id_by_name(trans_type_name):
+    conn = create_connection('stock_control.db')
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT TransType_ID FROM tbl_TransType WHERE TransType = ?', (trans_type_name,))
+            result = cur.fetchone()
+            if result:
+                return result[0]
+        finally:
+            conn.close()
+    return None
+
+def get_account_id_by_name(account_name):
+    conn = create_connection('stock_control.db')
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT Account_ID FROM tbl_Accounts WHERE AccountName = ?', (account_name,))
+            result = cur.fetchone()
+            if result:
+                return result[0]
+        finally:
+            conn.close()
+    return None
+
+def get_return_id_by_name(return_type_name):
+    conn = create_connection('stock_control.db')
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT Returns_ID FROM tbl_Returns WHERE ReturnType = ?', (return_type_name,))
+            result = cur.fetchone()
+            if result:
+                return result[0]
+        finally:
+            conn.close()
+    return None
+
+def get_transactions_edit():
+    conn = create_connection('stock_control.db')
+    query = '''
+    SELECT 
+        pt.Transaction_ID_FK AS Trans_ID,
+        p.Product, 
+        p.Product_ID AS Product_ID,
+        t.TransType, 
+        pt.Qty AS Quantity, 
+        tr.DateTime AS Date, 
+        a.AccountName AS Account, 
+        c.CustomerName || ' ' || c.CustomerSurname AS Name,
+        r.ReturnType,
+        pt.PONumber,
+        strftime('%W', tr.DateTime) AS weekNo
+    FROM 
+        tbl_ProductTransaction pt
+    JOIN 
+        tbl_Product p ON pt.Product_ID_FK = p.Product_ID
+    JOIN 
+        tbl_Transaction tr ON pt.Transaction_ID_FK = tr.Transaction_ID
+    JOIN 
+        tbl_TransType t ON tr.TransType_ID_FK = t.TransType_ID
+    LEFT JOIN 
+        tbl_Customer c ON tr.Customer_ID_FK = c.Customer_ID
+    LEFT JOIN 
+        tbl_Accounts a ON pt.Account_ID_FK = a.Account_ID
+    LEFT JOIN 
+        tbl_Returns r ON pt.Return_ID_FK = r.Returns_ID
+    '''
+    cur = conn.cursor()
+    cur.execute(query)
+    transactions = cur.fetchall()
+    conn.close()
+    return transactions

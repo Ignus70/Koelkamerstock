@@ -1,8 +1,9 @@
-from database import create_connection, load_return_types, add_product, add_transaction, load_products, load_trans_types, load_data, get_balances, get_transactions, get_recon_data, add_customer, validate_login, hash_password, get_user_full_name, load_accounts, update_transaction, update_product
+from database import delete_transaction, get_transactions_edit, get_account_id_by_name, get_return_id_by_name, get_trans_type_id_by_name ,load_return_types, add_product, add_transaction, get_product_id_by_name, load_products, load_trans_types, load_data, get_balances, get_transactions, get_recon_data, add_customer, validate_login, hash_password, get_user_full_name, load_accounts, update_transaction, update_product
 import sqlite3
 import pandas as pd
 import streamlit as st
 import base64
+import time
 
 # Function to connect to the SQLite database
 def create_connection(db_file='stock_control.db'):
@@ -21,37 +22,6 @@ def download_database(db_file):
     b64 = base64.b64encode(data).decode()
     href = f'<a href="data:file/sqlite;base64,{b64}" download="{db_file}">Download {db_file}</a>'
     return href
-
-# Function to delete a transaction
-def delete_transaction(transaction_id):
-    conn = create_connection('stock_control.db')
-    if conn:
-        try:
-            with conn:
-                cur = conn.cursor()
-
-                # Start a transaction
-                cur.execute('BEGIN')
-
-                # Delete from tbl_ProductTransaction
-                sql = 'DELETE FROM tbl_ProductTransaction WHERE Transaction_ID_FK = ?'
-                cur.execute(sql, (transaction_id,))
-
-                # Delete from tbl_Transaction
-                sql = 'DELETE FROM tbl_Transaction WHERE Transaction_ID = ?'
-                cur.execute(sql, (transaction_id,))
-
-                # Commit the transaction
-                conn.commit()
-
-            st.success("Transaction deleted successfully!")
-        except sqlite3.Error as e:
-            # Rollback in case of error
-            conn.rollback()
-            st.error(f"An error occurred while deleting transaction: {e}")
-        finally:
-            conn.close()
-
 
 # Main Streamlit app
 def main():
@@ -142,22 +112,35 @@ def main():
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.form_submit_button('Add another product'):
-                        st.session_state.product_entries.append({'product_id': None, 'qty': 1, 'account_id': None, 'return_id': None})
+                        st.session_state.product_entries.append({'product_id': None, 'qty': 1, 'account_id': None, 'return_id': None, 'po_number': None})
                         st.rerun()
                 with col2:
                     if st.form_submit_button('Remove last product') and len(st.session_state.product_entries) > 1:
                         st.session_state.product_entries.pop()
                         st.rerun()
 
+                # Ensure all entries have 'po_number'
+                for entry in st.session_state.product_entries:
+                    if 'po_number' not in entry:
+                        entry['po_number'] = None
+
                 # Dynamically manage product selections
                 for i, entry in enumerate(st.session_state.product_entries):
-                    cols = st.columns([3, 1, 3, 2])
-                    with cols[0]:
+                    st.markdown(
+                        """
+                        <div style="border: 5px solid #ddd; padding: 0.25px; margin-bottom: 2px; border-radius: 5px;">
+                        """, unsafe_allow_html=True
+                    )
+                    cols1 = st.columns([3, 1])
+                    with cols1[0]:
                         entry['product_id'] = st.selectbox('Select Product', product_list, format_func=lambda x: x[1], key=f"product_{i}")
-                    with cols[1]:
+                    with cols1[1]:
                         entry['qty'] = st.number_input('Quantity', value=entry['qty'], min_value=0, key=f"qty_{i}")
+
+                    # Second row: account, return type, and PONumber
+                    cols2 = st.columns([3, 2, 2])
                     if trans_type_id[1] in ['Uit', 'Return']:  # Check if transaction type is 'Uit' or 'Return'
-                        with cols[2]:
+                        with cols2[0]:
                             account_names = [account[1] for account in account_list]
                             selected_account = st.radio('Select Account', account_names, key=f"account_{i}")
                             entry['account_id'] = [account[0] for account in account_list if account[1] == selected_account][0]
@@ -165,12 +148,18 @@ def main():
                         entry['account_id'] = None
 
                     if trans_type_id[1] == 'Return':  # Check if transaction type is 'Return'
-                        with cols[3]:
+                        with cols2[1]:
                             return_names = [return_type[1] for return_type in return_types]
                             selected_return = st.radio('Select Return Type', return_names, key=f"return_{i}")
                             entry['return_id'] = [return_type[0] for return_type in return_types if return_type[1] == selected_return][0]
                     else:
                         entry['return_id'] = None
+
+                    with cols2[2]:
+                        if trans_type_id[1] in ['Uit', 'Return']:  # PONumber is required for 'Uit' and 'Return' but can be null
+                            entry['po_number'] = st.text_input('PONumber', key=f"po_{i}")
+
+                    st.markdown("</div>", unsafe_allow_html=True)
 
                 # Form submission button
                 submitted = st.form_submit_button("Submit Transaction")
@@ -179,9 +168,12 @@ def main():
                     quantities = [entry['qty'] for entry in st.session_state.product_entries]
                     account_ids = [entry['account_id'] for entry in st.session_state.product_entries if entry['account_id'] is not None]
                     return_ids = [entry['return_id'] for entry in st.session_state.product_entries if entry['return_id'] is not None]
-                    add_transaction(trans_type_id[0], product_ids, quantities, account_ids, return_ids)
+                    po_numbers = [entry['po_number'] for entry in st.session_state.product_entries]
+                    print(f"Submitting transaction: {product_ids}, {quantities}, {account_ids}, {return_ids}, {po_numbers}")
+                    add_transaction(trans_type_id[0], product_ids, quantities, account_ids, return_ids, po_numbers)
                     st.success('Transaction recorded successfully!')
                     st.session_state.product_entries = []
+
 
         elif option == 'Nuwe Produk':
             st.header('Add a New Product')
@@ -228,31 +220,99 @@ def main():
                 df_balances = pd.DataFrame(balances, columns=['Product', 'Balance'])
                 st.write("Current Product Balances:")
                 st.table(df_balances)
+
+#Transaction Report
+
             elif view_mode == 'Transaksie':
+                st.header('Transaction Details')
+                
+                # Fetch transactions
                 transactions = get_transactions()
-                df_transactions = pd.DataFrame(transactions, columns=['Trans_ID', 'Product', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'weekNo'])
-                df_transactions = add_week_numbers(df_transactions, 'Date')
+                
+                if not transactions:
+                    st.warning("No transactions found.")
+                else:
+                    # Convert transactions to DataFrame
 
-                st.write("Transaction Details:")
+                    st.write("Transaction Details:")
+                    
+                    if st.session_state['is_editor']:
+                        edit = st.radio('Edit:', ('No', 'Delete', 'Edit'), key='edit_mode')
+                        
+                        if edit == 'Delete':
+                            df_transactions = pd.DataFrame(transactions, columns=['Trans_ID', 'Product', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'PONumber', 'weekNo'])
+                            
+                            # Display the dataframe with selections enabled
+                            selected_rows = st.dataframe(
+                                df_transactions,
+                                use_container_width=True,
+                                hide_index=True,
+                                on_select="rerun",
+                                selection_mode="single-row"
+                            ).selection.rows
+                            
+                            if selected_rows:
+                                selected_row = df_transactions.iloc[selected_rows[0]]
+                                selected_transaction_id = selected_row['Trans_ID']
+                                selected_product_name = selected_row['Product']
+                                selected_product_id = get_product_id_by_name(selected_product_name)
 
-                # Filters
-                filter_columns = ['Product', 'Name', 'Account', 'TransType', 'ReturnType', 'weekNo']
-                filters = add_filters(df_transactions, filter_columns)
-                df_filtered = apply_filters(df_transactions, filters)
+                                if selected_product_id is not None:
+                                    selected_product_id = int(selected_product_id)
+                                    selected_transaction_id = int(selected_transaction_id)  # Convert to int
+                                    
+                                    if st.button("Delete Selected Transaction"):
+                                        delete_transaction(selected_transaction_id, selected_product_id)
+                                        st.success(f"Deleted Transaction_ID: {selected_transaction_id} and Product_ID: {selected_product_id}")
+                                        time.sleep(2)
+                                        st.experimental_rerun()  # Refresh the page after deletion
+                                else:
+                                    st.error("Failed to retrieve the Product ID.")
+                    
+                        elif edit == 'Edit':
+                            df_transactions_edit = pd.DataFrame(get_transactions_edit(),columns=['Trans_ID', 'Product', 'Product_ID', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'PONumner', 'weekNo'])
+                # Display the dataframe with inline editing enabled
+                            edited_df = st.data_editor(df_transactions_edit, num_rows="dynamic", key='transactions_editor')
 
-                # Sorting and Pagination
-                df_filtered = df_filtered.sort_values(by='Date', ascending=False)
-                df_paginated = paginate_dataframe(df_filtered, page_size=10)
+                            # Collect the updated rows
+                            updated_rows = []
+                            for index, row in edited_df.iterrows():
+                                if not row.equals(df_transactions_edit.loc[index]):
+                                    updated_rows.append(row)
 
-                edited_df = st.data_editor(df_paginated, num_rows="dynamic")
+                            # Button to save changes
+                            if st.button("Save Changes"):
+                                for row in updated_rows:
+                                    transaction_id = row['Trans_ID']
+                                    product_id = row['Product_ID']
+                                    trans_type_id = get_trans_type_id_by_name(row['TransType'])
+                                    quantity = row['Quantity']
+                                    date = row['Date']
+                                    account_id = get_account_id_by_name(row['Account'])
+                                    return_id = get_return_id_by_name(row['ReturnType'])
+                                    update_transaction(transaction_id, product_id, trans_type_id, account_id, date, quantity, return_id)
+                                    st.write(f"Trans_ID: {transaction_id}, Product_ID: {product_id}")
+                                st.success("Changes saved successfully!")
+                                st.rerun()  # Refresh the page after update
 
-                # Save changes to the database
-                if st.session_state['is_editor'] and st.button("Save Changes"):
-                    edited_rows = st.session_state["edited_rows"]
-                    for row_index, changes in edited_rows.items():
-                        row = edited_df.loc[row_index]
-                        update_transaction(row['Trans_ID'], changes.get('Product', row['Product']), changes.get('TransType', row['TransType']), changes.get('Quantity', row['Quantity']))
-                    st.success("Changes saved successfully!")
+
+                    
+                    if not st.session_state['is_editor'] or edit == 'No':
+                        df_transactions = pd.DataFrame(transactions, columns=['Trans_ID', 'Product', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'PONumber', 'weekNo'])
+                        # Filters
+                        filter_columns = ['Product', 'Name', 'Account', 'TransType', 'ReturnType', 'PONumber', 'weekNo']
+                        filters = add_filters(df_transactions, filter_columns)
+                        df_filtered = apply_filters(df_transactions, filters)
+
+                        # Sorting and Pagination
+                        df_filtered = df_filtered.sort_values(by='Date', ascending=False)
+                        df_paginated = paginate_dataframe(df_filtered, page_size=10)
+
+                        st.write("Filtered Transactions:")
+                        st.dataframe(df_paginated)
+
+
+
 
 
             elif view_mode == 'Recon':
@@ -289,13 +349,22 @@ def add_filters(df, filter_columns):
             st.session_state[f"filter_{col}"] = "All"
         st.experimental_rerun()
 
-    cols = st.columns(len(filter_columns))  # Adjusted columns to align with filter dropdowns
-    for idx, col in enumerate(filter_columns):
-        with cols[idx]:
-            unique_values = ["All"] + list(df[col].fillna('None').unique())
-            if f"filter_{col}" not in st.session_state:
-                st.session_state[f"filter_{col}"] = "All"
-            filters[col] = st.selectbox(f"Filter {col}", unique_values, key=f"filter_{col}")
+    num_filters_per_row = 4
+    rows = (len(filter_columns) + num_filters_per_row - 1) // num_filters_per_row  # Calculate the number of rows needed
+
+    for row in range(rows):
+        cols = st.columns(num_filters_per_row)
+        for idx in range(num_filters_per_row):
+            col_idx = row * num_filters_per_row + idx
+            if col_idx < len(filter_columns):
+                col = filter_columns[col_idx]
+                with cols[idx]:
+                    unique_values = ["All"] + list(df[col].fillna('None').unique())
+                    if f"filter_{col}" not in st.session_state:
+                        st.session_state[f"filter_{col}"] = "All"
+                    filters[col] = st.selectbox(f"{col}", unique_values, key=f"filter_{col}")
+
+    return filters
 
     return filters
 
