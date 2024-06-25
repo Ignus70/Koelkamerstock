@@ -230,7 +230,7 @@ def main():
                 st.table(df_balances)
             elif view_mode == 'Transaksie':
                 transactions = get_transactions()
-                df_transactions = pd.DataFrame(transactions, columns=['Trans_ID', 'Product', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType'])
+                df_transactions = pd.DataFrame(transactions, columns=['Trans_ID', 'Product', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'weekNo'])
                 df_transactions = add_week_numbers(df_transactions, 'Date')
 
                 st.write("Transaction Details:")
@@ -251,8 +251,9 @@ def main():
                     edited_rows = st.session_state["edited_rows"]
                     for row_index, changes in edited_rows.items():
                         row = edited_df.loc[row_index]
-                        update_transaction(row['Transaction_ID'], changes.get('Product', row['Product']), changes.get('Transaction Type', row['Transaction Type']), changes.get('Quantity', row['Quantity']))
+                        update_transaction(row['Trans_ID'], changes.get('Product', row['Product']), changes.get('TransType', row['TransType']), changes.get('Quantity', row['Quantity']))
                     st.success("Changes saved successfully!")
+
 
             elif view_mode == 'Recon':
                 st.write("Recon View:")

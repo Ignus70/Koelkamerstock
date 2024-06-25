@@ -45,7 +45,8 @@ def add_product(product_name):
     return None
 
 # Function to add a transaction
-def add_transaction(trans_type_id, product_ids, quantities, account_ids=None, return_ids=None):
+# Function to add a transaction
+def add_transaction(trans_type_id, product_ids, quantities, account_ids, return_ids):
     conn = create_connection('stock_control.db')
     customer_id = st.session_state.get('user_id')  # Get the logged-in user's ID from session state
     if not customer_id:
@@ -68,7 +69,6 @@ def add_transaction(trans_type_id, product_ids, quantities, account_ids=None, re
                 elif trans_type_id == 4:  # 'Return'
                     product_transaction_sql = '''INSERT INTO tbl_ProductTransaction(Transaction_ID_FK, Product_ID_FK, Account_ID_FK, Qty, Return_ID_FK) VALUES(?,?,?,?,?)'''
                     cur.executemany(product_transaction_sql, [(transaction_id, pid, aid, qty, rid) for pid, aid, qty, rid in zip(product_ids, account_ids, quantities, return_ids)])
-                
                 conn.commit()
                 return transaction_id
         except sqlite3.Error as e:
@@ -76,7 +76,6 @@ def add_transaction(trans_type_id, product_ids, quantities, account_ids=None, re
         finally:
             conn.close()
     return None
-
 
 # Function to load accounts
 def load_accounts():
@@ -116,32 +115,26 @@ def get_balances():
                        SUM(pt.Qty) AS StocktakeQty
                 FROM tbl_ProductTransaction pt
                 JOIN tbl_Transaction tr ON pt.Transaction_ID_FK = tr.Transaction_ID
+                JOIN tbl_TransType tt ON tr.TransType_ID_FK = tt.TransType_ID
                 JOIN LatestStocktake lst ON pt.Product_ID_FK = lst.Product_ID_FK
                                          AND tr.DateTime = lst.LatestStocktakeDate
-                GROUP BY pt.Product_ID_FK
-            ),
-            TransactionsAfterStocktake AS (
-                SELECT pt.Product_ID_FK,
-                       SUM(CASE WHEN t.TransType = 'In' THEN pt.Qty ELSE 0 END) AS Qty_In,
-                       SUM(CASE WHEN t.TransType = 'Uit' THEN -pt.Qty ELSE 0 END) AS Qty_Out,
-                       SUM(CASE WHEN t.TransType = 'Return' AND r.ReturnType = 'Hergebruik' THEN pt.Qty ELSE 0 END) AS Qty_Return
-                FROM tbl_ProductTransaction pt
-                JOIN tbl_Transaction tr ON pt.Transaction_ID_FK = tr.Transaction_ID
-                JOIN tbl_TransType t ON tr.TransType_ID_FK = t.TransType_ID
-                LEFT JOIN tbl_Returns r ON pt.Return_ID_FK = r.Returns_ID
-                WHERE tr.DateTime > (SELECT MAX(tr2.DateTime) FROM tbl_Transaction tr2 
-                                     JOIN tbl_TransType tt2 ON tr2.TransType_ID_FK = tt2.TransType_ID
-                                     WHERE tt2.TransType = 'Stock Take' AND tr2.Customer_ID_FK = tr.Customer_ID_FK)
                 GROUP BY pt.Product_ID_FK
             )
             SELECT p.Product,
                    COALESCE(sb.StocktakeQty, 0) +
-                   COALESCE(ta.Qty_In, 0) +
-                   COALESCE(ta.Qty_Return, 0) +
-                   COALESCE(ta.Qty_Out, 0) AS Balance
+                   SUM(CASE WHEN t.TransType = 'In' THEN pt.Qty
+                            WHEN t.TransType = 'Uit' THEN -pt.Qty
+                            WHEN t.TransType = 'Return' AND r.ReturnType = 'Hergebruik' THEN pt.Qty
+                            ELSE 0 END) AS Balance
             FROM tbl_Product p
+            LEFT JOIN tbl_ProductTransaction pt ON p.Product_ID = pt.Product_ID_FK
+            LEFT JOIN tbl_Transaction tr ON pt.Transaction_ID_FK = tr.Transaction_ID
+            LEFT JOIN tbl_TransType t ON tr.TransType_ID_FK = t.TransType_ID
+            LEFT JOIN tbl_Returns r ON pt.Return_ID_FK = r.Returns_ID
             LEFT JOIN StocktakeBalance sb ON p.Product_ID = sb.Product_ID_FK
-            LEFT JOIN TransactionsAfterStocktake ta ON p.Product_ID = ta.Product_ID_FK
+            WHERE tr.DateTime > COALESCE((SELECT MAX(lst.LatestStocktakeDate) FROM LatestStocktake lst WHERE lst.Product_ID_FK = p.Product_ID), '1970-01-01')
+            OR t.TransType = 'Stock Take'
+            GROUP BY p.Product
             '''
             return execute_query_fetch_all(conn, query)
         finally:
@@ -153,14 +146,15 @@ def get_transactions():
     conn = create_connection('stock_control.db')
     query = '''
     SELECT 
-        pt.Transaction_ID_FK AS Transaction_ID,
+        pt.Transaction_ID_FK AS Trans_ID,
         p.Product, 
         t.TransType, 
-        pt.Qty, 
-        tr.DateTime, 
-        a.AccountName, 
+        pt.Qty AS Quantity, 
+        tr.DateTime AS Date, 
+        a.AccountName AS Account, 
         c.CustomerName || ' ' || c.CustomerSurname AS Name,
-        r.ReturnType
+        r.ReturnType,
+        strftime('%W', tr.DateTime) AS weekNo
     FROM 
         tbl_ProductTransaction pt
     JOIN 
@@ -176,7 +170,12 @@ def get_transactions():
     LEFT JOIN 
         tbl_Returns r ON pt.Return_ID_FK = r.Returns_ID
     '''
-    return execute_query_fetch_all(conn, query)
+    cur = conn.cursor()
+    cur.execute(query)
+    transactions = cur.fetchall()
+    conn.close()
+    return transactions
+
 
 
 # Function to get recon data
@@ -236,7 +235,7 @@ def get_recon_data():
                    trir.Qty_Return,
                    COALESCE(pstb.StocktakeQty, 0) AS PreviousBalance,
                    COALESCE(lstb.StocktakeQty, 0) AS LatestBalance,
-                   -1 * (COALESCE(pstb.StocktakeQty, 0) + COALESCE(trir.Qty_In, 0) - COALESCE(trir.Qty_Uit, 0) + COALESCE(trir.Qty_Return, 0) - COALESCE(lstb.StocktakeQty, 0)) AS Deviation
+                   (COALESCE(pstb.StocktakeQty, 0) + COALESCE(trir.Qty_In, 0) - COALESCE(trir.Qty_Uit, 0) + COALESCE(trir.Qty_Return, 0) - COALESCE(lstb.StocktakeQty, 0)) * -1 AS Deviation
             FROM tbl_Product p
             LEFT JOIN LatestStocktake lst ON p.Product_ID = lst.Product_ID_FK
             LEFT JOIN PreviousStocktake pst ON p.Product_ID = pst.Product_ID_FK
@@ -249,7 +248,6 @@ def get_recon_data():
         finally:
             conn.close()
     return []
-
 
 # Function to add a new customer
 def add_customer(name, surname, email, hashed_password):
@@ -319,7 +317,7 @@ def update_transaction(transaction_id, product_id, trans_type_id, qty):
                 cur.execute(sql, (trans_type_id, transaction_id))
                 conn.commit()
         except sqlite3.Error as e:
-            print(f"An error occurred while updating transaction: {e}")
+            st.error(f"An error occurred while updating transaction: {e}")
         finally:
             conn.close()
 
@@ -336,3 +334,52 @@ def update_product(product_id, product_name):
             print(f"An error occurred while updating product: {e}")
         finally:
             conn.close()
+
+# Function to delete a transaction
+def delete_transaction(transaction_id, product_id):
+    conn = create_connection('stock_control.db')
+    if conn:
+        try:
+            with conn:
+                # Delete from tbl_ProductTransaction based on Transaction_ID and Product_ID
+                sql = 'DELETE FROM tbl_ProductTransaction WHERE Transaction_ID_FK = ? AND Product_ID_FK = ?'
+                cur = conn.cursor()
+                cur.execute(sql, (transaction_id, product_id))
+                conn.commit()
+
+                # Check if there are any remaining entries for the transaction
+                cur.execute('SELECT COUNT(*) FROM tbl_ProductTransaction WHERE Transaction_ID_FK = ?', (transaction_id,))
+                count = cur.fetchone()[0]
+
+                # If no remaining entries, delete from tbl_Transaction
+                if count == 0:
+                    sql = 'DELETE FROM tbl_Transaction WHERE Transaction_ID = ?'
+                    cur.execute(sql, (transaction_id,))
+                    conn.commit()
+                
+            st.success("Transaction deleted successfully!")
+        except sqlite3.Error as e:
+            st.error(f"An error occurred while deleting transaction: {e}")
+        finally:
+            conn.close()
+
+def get_product_id_by_name(product_name):
+    conn = create_connection('stock_control.db')
+    query = 'SELECT Product_ID FROM tbl_Product WHERE Product = ?'
+    result = execute_query_fetch_all(conn, query, (product_name,))
+    return result[0][0] if result else None
+
+def get_trans_type_id_by_name(trans_type_name):
+    conn = create_connection('stock_control.db')
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT TransType_ID FROM tbl_TransType WHERE TransType = ?', (trans_type_name,))
+            trans_type_id = cur.fetchone()
+            if trans_type_id:
+                return trans_type_id[0]
+        except sqlite3.Error as e:
+            st.error(f"An error occurred while fetching transaction type ID: {e}")
+        finally:
+            conn.close()
+    return None
