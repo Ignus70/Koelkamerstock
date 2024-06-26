@@ -59,17 +59,20 @@ def main():
         login_email = st.text_input('Email')
         login_password = st.text_input('Password', type='password')
         if st.button('Login'):
-            user_id, customer_name, customer_surname = validate_login(login_email, login_password)
-            if user_id:
-                st.session_state['user_id'] = user_id
-                st.session_state['logged_in'] = True
-                st.session_state['customer_name'] = customer_name
-                st.session_state['customer_surname'] = customer_surname
-                st.session_state['is_editor'] = login_email == 'systems@ber.co.za' or login_email == 'data@ber.co.za'
-                st.success('Login successful!')
-                st.experimental_rerun()
+            if '@ber.co.za' not in login_email:
+                st.error('You do not belong to Bergendal.')
             else:
-                st.error('Invalid email or password')
+                user_id, customer_name, customer_surname = validate_login(login_email, login_password)
+                if user_id:
+                    st.session_state['user_id'] = user_id
+                    st.session_state['logged_in'] = True
+                    st.session_state['customer_name'] = customer_name
+                    st.session_state['customer_surname'] = customer_surname
+                    st.session_state['is_editor'] = login_email == 'systems@ber.co.za' or login_email == 'data@ber.co.za'
+                    st.success('Login successful!')
+                    st.experimental_rerun()
+                else:
+                    st.error('Invalid email or password')
 
     elif option == 'Sign Up':
         st.header('Sign Up')
@@ -79,7 +82,11 @@ def main():
         signup_password = st.text_input('Password', type='password')
         signup_password_confirm = st.text_input('Confirm Password', type='password')
         if st.button('Sign Up'):
-            if signup_password == signup_password_confirm:
+            if '@ber.co.za' not in signup_email:
+                st.error('You do not belong to Bergendal.')
+            elif signup_password != signup_password_confirm:
+                st.error('Passwords do not match')
+            else:
                 hashed_password = hash_password(signup_password)
                 user_id = add_customer(signup_name, signup_surname, signup_email, hashed_password)
                 if user_id:
@@ -87,8 +94,6 @@ def main():
                     st.experimental_rerun()
                 else:
                     st.error('Error signing up. Please try again.')
-            else:
-                st.error('Passwords do not match')
 
     elif option == 'Logout':
         st.session_state['logged_in'] = False
