@@ -25,6 +25,12 @@ def download_database(db_file):
 
 # Main Streamlit app
 def main():
+    st.set_page_config(
+        page_title="Bergendal Koelkamer",
+        page_icon="🍊",  # Orange emoji
+        layout="wide"
+    )
+
     st.title("Koelkamer Stock")
 
     # Sidebar menu based on login state
@@ -70,7 +76,7 @@ def main():
                     st.session_state['customer_surname'] = customer_surname
                     st.session_state['is_editor'] = login_email == 'systems@ber.co.za' or login_email == 'data@ber.co.za'
                     st.success('Login successful!')
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error('Invalid email or password')
 
@@ -91,7 +97,7 @@ def main():
                 user_id = add_customer(signup_name, signup_surname, signup_email, hashed_password)
                 if user_id:
                     st.success('You have successfully signed up! Please log in.')
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error('Error signing up. Please try again.')
 
@@ -102,7 +108,7 @@ def main():
         st.session_state['customer_surname'] = ""
         st.session_state['is_editor'] = False
         st.success('Logged out successfully!')
-        st.experimental_rerun()
+        st.rerun()
 
     elif 'logged_in' in st.session_state and st.session_state['logged_in']:
         if option == 'Transaksie':
@@ -269,13 +275,13 @@ def main():
                                     if st.button("Delete Selected Transaction"):
                                         delete_transaction(selected_transaction_id, selected_product_id)
                                         st.success(f"Deleted Transaction_ID: {selected_transaction_id} and Product_ID: {selected_product_id}")
-                                        time.sleep(2)
-                                        st.experimental_rerun()  # Refresh the page after deletion
+                                        time.sleep(1)
+                                        st.rerun()  # Refresh the page after deletion
                                 else:
                                     st.error("Failed to retrieve the Product ID.")
                     
                         elif edit == 'Edit':
-                            df_transactions_edit = pd.DataFrame(get_transactions_edit(),columns=['Trans_ID', 'Product', 'Product_ID', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'PONumner', 'weekNo'])
+                            df_transactions_edit = pd.DataFrame(get_transactions_edit(),columns=['Trans_ID', 'Product', 'Product_ID', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'PONumber', 'weekNo'])
                 # Display the dataframe with inline editing enabled
                             edited_df = st.data_editor(df_transactions_edit, num_rows="dynamic", key='transactions_editor')
 
@@ -295,8 +301,10 @@ def main():
                                     date = row['Date']
                                     account_id = get_account_id_by_name(row['Account'])
                                     return_id = get_return_id_by_name(row['ReturnType'])
-                                    update_transaction(transaction_id, product_id, trans_type_id, account_id, date, quantity, return_id)
+                                    po_numbers = row['PONumber']
+                                    update_transaction(transaction_id, product_id, trans_type_id, account_id, date, quantity, return_id, po_numbers)
                                     st.write(f"Trans_ID: {transaction_id}, Product_ID: {product_id}")
+                                time.sleep(1)
                                 st.success("Changes saved successfully!")
                                 st.rerun()  # Refresh the page after update
 
@@ -352,7 +360,7 @@ def add_filters(df, filter_columns):
     if clear_filters:
         for col in filter_columns:
             st.session_state[f"filter_{col}"] = "All"
-        st.experimental_rerun()
+        st.rerun()
 
     num_filters_per_row = 4
     rows = (len(filter_columns) + num_filters_per_row - 1) // num_filters_per_row  # Calculate the number of rows needed

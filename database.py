@@ -151,7 +151,7 @@ def get_transactions():
         p.Product, 
         t.TransType, 
         pt.Qty AS Quantity, 
-        tr.DateTime AS Date, 
+        strftime('%Y-%m-%d %H:%M:%S', tr.DateTime) AS Date, 
         a.AccountName AS Account, 
         c.CustomerName || ' ' || c.CustomerSurname AS Name,
         r.ReturnType,
@@ -176,7 +176,6 @@ def get_transactions():
     cur.execute(query)
     transactions = cur.fetchall()
     conn.close()
-    print(transactions)  # Debug statement to check if transactions are fetched
     return transactions
 
 
@@ -320,7 +319,7 @@ def update_transaction(transaction_id, product_id, trans_type_id, account_id, da
                 '''
                 cur.execute(sql, (trans_type_id, date, transaction_id))
                 conn.commit()
-                print(trans_type_id)
+                st.success("Transaction updated success")
         except sqlite3.Error as e:
             st.error(f"An error occurred while updating transaction: {e}")
         finally:
