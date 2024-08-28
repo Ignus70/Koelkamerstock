@@ -19,13 +19,6 @@ def create_connection(db_file='stock_control.db'):
     return conn
 
 # Function to generate a download link for the database file
-def download_database(db_file):
-    with open(db_file, 'rb') as f:
-        data = f.read()
-    b64 = base64.b64encode(data).decode()
-    href = f'<a href="data:file/sqlite;base64,{b64}" download="{db_file}">Download {db_file}</a>'
-    return href
-
 github_token = st.secrets["github"]["token"]
 
 # Set the repository URL to use HTTPS and include the token
@@ -41,21 +34,38 @@ repo = Repo(repo_path)
 origin = repo.remote(name='origin')
 origin.pull()
 
+# Function to generate a download link for the database file
+def download_database(db_file):
+    if os.path.exists(db_file):
+        with open(db_file, 'rb') as f:
+            data = f.read()
+        b64 = base64.b64encode(data).decode()
+        href = f'<a href="data:file/sqlite;base64,{b64}" download="{os.path.basename(db_file)}">Download {os.path.basename(db_file)}</a>'
+        return href
+    else:
+        return "Database file not found."
+
 # Function to commit and push changes to GitHub
 def push_to_github():
     try:
         # Change to the repository path
         os.chdir(repo_path)
         
-        # Ensure that the correct path to the database is used and that changes are staged
+        # Check if the database file exists and stage it for commit
         if os.path.exists(db_path):
-            print("File found:", db_path)
-            repo.git.add('--force', db_file_name)  # Force add to ensure it gets staged, use file name relative to repo_path
+            print(f"Staging file for commit: {db_file_name}")
+            repo.git.add('--force', db_file_name)  # Use the file name to ensure it adds the correct file
         else:
-            print("File not found:", db_path)
+            print(f"File not found at path: {db_path}")
+            st.error("Database file not found. Cannot push to GitHub.")
+            return
         
-        # Commit and push changes
+        # Commit the changes
+        print("Committing changes to GitHub...")
         repo.index.commit("Update database with latest changes")
+        
+        # Push the changes to GitHub
+        print("Pushing changes to GitHub...")
         origin.push()
         
         st.success("Changes have been pushed to GitHub successfully!")
