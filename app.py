@@ -239,9 +239,9 @@ def main():
                     po_numbers = [entry['po_number'] for entry in st.session_state.product_entries]
                     print(f"Submitting transaction: {product_ids}, {quantities}, {account_ids}, {return_ids}, {po_numbers}")
                     add_transaction(trans_type_id[0], product_ids, quantities, account_ids, return_ids, po_numbers)
-                    push_to_github()
                     st.success('Transaction recorded successfully!')
                     st.session_state.product_entries = []
+                    push_to_github()
 
 
         elif option == 'Nuwe Produk':
