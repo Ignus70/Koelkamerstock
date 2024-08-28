@@ -42,13 +42,20 @@ def download_database(db_file):
 # Function to commit and push changes to GitHub
 def push_to_github():
     try:
-        # Initialize the Repo object for the current directory
-        repo = Repo.init(os.getcwd())  # Initialize a git repo in the current directory
+        # Initialize or open the Repo object for the current directory
+        repo = Repo(os.getcwd()) if os.path.exists('.git') else Repo.init(os.getcwd())
 
-        # Set the remote origin if not already set
-        if not repo.remotes:
-            repo.create_remote('origin', repo_url)
-        origin = repo.remote(name='origin')
+        # Configure user details (this can be skipped if already set globally)
+        with repo.config_writer() as git_config:
+            git_config.set_value('user', 'name', 'Ignus70')
+            git_config.set_value('user', 'email', 'systems@ber.co.za')
+
+        # Set the remote URL using the GitHub token for authentication
+        if 'origin' not in [remote.name for remote in repo.remotes]:
+            origin = repo.create_remote('origin', repo_url)
+        else:
+            origin = repo.remote(name='origin')
+            origin.set_url(repo_url)  # Ensure it's using the token URL
 
         # Add the database file to the staging area
         if os.path.exists(db_path):
@@ -58,10 +65,14 @@ def push_to_github():
             return
         
         # Commit the changes
-        repo.index.commit("Update database with latest changes")
+        if repo.is_dirty(untracked_files=True):
+            repo.index.commit("Update database with latest changes")
+        else:
+            st.info("No changes detected to commit.")
+            return
         
         # Push the changes to GitHub
-        origin.push()
+        origin.push(refspec='main:main')  # Replace 'main' with the actual branch name if different
         
         st.success("Changes have been pushed to GitHub successfully!")
     
