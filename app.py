@@ -26,27 +26,14 @@ def download_database(db_file):
     href = f'<a href="data:file/sqlite;base64,{b64}" download="{db_file}">Download {db_file}</a>'
     return href
 
-# Use a temporary directory for the repository path
-ssh_key = st.secrets["ssh"]["private_key"]
-ssh_key_path = os.path.expanduser("~/.ssh/id_rsa")
+github_token = st.secrets["github"]["token"]
 
-# Ensure the .ssh directory exists
-os.makedirs(os.path.dirname(ssh_key_path), exist_ok=True)
-
-# Write the SSH key to a file and set permissions
-with open(ssh_key_path, "w") as f:
-    f.write(ssh_key)
-os.chmod(ssh_key_path, 0o600)  # Set permissions to secure the SSH key
-
-# Set the Git executable path if needed (usually not necessary on Streamlit Cloud)
-os.environ['GIT_PYTHON_GIT_EXECUTABLE'] = r'C:\Program Files\Git\bin\git.exe'  # Adjust this if on Windows
+# Set the repository URL to use HTTPS and include the token
+repo_url = f'https://{github_token}:x-oauth-basic@github.com/Ignus70/Koelkamerstock.git'
 
 # Use a temporary directory for the repository path
 repo_path = tempfile.mkdtemp()
 db_path = os.path.join(repo_path, 'stock_control.db')
-
-# Replace with the actual SSH URL of your GitHub repository
-repo_url = 'git@github.com:Ignus70/Koelkamerstock.git'
 
 # Clone the repository if not already cloned
 if not os.path.exists(os.path.join(repo_path, '.git')):
