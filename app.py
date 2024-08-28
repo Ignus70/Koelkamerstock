@@ -24,33 +24,9 @@ github_token = st.secrets["github"]["token"]
 # Set the repository URL to use HTTPS and include the token
 repo_url = f'https://{github_token}@github.com/Ignus70/Koelkamerstock.git'
 
-# Use Streamlit's temporary directory for the repository path
-repo_path = os.path.join(st.experimental_get_dir(), 'repo')  # This ensures the path is writable
+# Path to the database file
 db_file_name = 'stock_control.db'
-db_path = os.path.join(repo_path, db_file_name)  # Full path to the database file
-
-# Ensure the directory exists
-if not os.path.exists(repo_path):
-    os.makedirs(repo_path)
-
-# Clone the repository into the temporary directory
-try:
-    if not os.path.exists(os.path.join(repo_path, '.git')):
-        print("Cloning the repository...")
-        Repo.clone_from(repo_url, repo_path)
-    repo = Repo(repo_path)
-    origin = repo.remote(name='origin')
-except exc.GitError as e:
-    st.error(f"Git error: {str(e)}")
-    st.stop()
-
-# Pull the latest changes from GitHub
-try:
-    print("Pulling the latest changes...")
-    origin.pull()
-except exc.GitError as e:
-    st.error(f"Failed to pull the latest changes: {str(e)}")
-    st.stop()
+db_path = db_file_name  # Assuming the database is in the same directory as this script
 
 # Function to generate a download link for the database file
 def download_database(db_file):
@@ -66,12 +42,17 @@ def download_database(db_file):
 # Function to commit and push changes to GitHub
 def push_to_github():
     try:
-        # Change to the repository path
-        os.chdir(repo_path)
-        
-        # Check if the database file exists and stage it for commit
+        # Initialize the Repo object for the current directory
+        repo = Repo.init(os.getcwd())  # Initialize a git repo in the current directory
+
+        # Set the remote origin if not already set
+        if not repo.remotes:
+            repo.create_remote('origin', repo_url)
+        origin = repo.remote(name='origin')
+
+        # Add the database file to the staging area
         if os.path.exists(db_path):
-            repo.git.add('--force', db_file_name)  # Use the file name to ensure it adds the correct file
+            repo.git.add(db_file_name)  # Add the specific database file
         else:
             st.error("Database file not found. Cannot push to GitHub.")
             return
@@ -88,7 +69,6 @@ def push_to_github():
         st.error(f"Failed to push changes to GitHub: {str(e)}")
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
-
 
 # Main Streamlit app
 def main():
