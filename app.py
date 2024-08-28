@@ -29,6 +29,10 @@ repo_path = tempfile.mkdtemp()
 db_file_name = 'stock_control.db'
 db_path = os.path.join(repo_path, db_file_name)  # Full path to the database file
 
+if not os.path.exists(os.path.join(repo_path, '.git')):
+    print("Cloning the repository...")
+    Repo.clone_from(repo_url, repo_path)
+    
 # Pull the latest changes from GitHub
 repo = Repo(repo_path)
 origin = repo.remote(name='origin')
