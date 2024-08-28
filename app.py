@@ -18,21 +18,36 @@ def create_connection(db_file='stock_control.db'):
         print(f"An error occurred: {e}")
     return conn
 
-# Function to generate a download link for the database file
+# Get the GitHub token from secrets
 github_token = st.secrets["github"]["token"]
 
 # Set the repository URL to use HTTPS and include the token
 repo_url = f'https://{github_token}:x-oauth-basic@github.com/Ignus70/Koelkamerstock.git'
 
-# Define the path to the local repository
-# Assume it's a directory on your server where your app is running
-repo_path = '/path/to/local/repo'  # Change this to your actual local repo path
+# Use a temporary directory for the repository path
+repo_path = tempfile.mkdtemp()
 db_file_name = 'stock_control.db'
 db_path = os.path.join(repo_path, db_file_name)  # Full path to the database file
 
-# Initialize the Repo object for the existing repository
-repo = Repo(repo_path)
-origin = repo.remote(name='origin')
+# Clone the repository into the temporary directory
+try:
+    if not os.path.exists(repo_path):
+        Repo.clone_from(repo_url, repo_path)
+    repo = Repo(repo_path)
+    origin = repo.remote(name='origin')
+except exc.NoSuchPathError:
+    st.error(f"Repository path {repo_path} does not exist.")
+    st.stop()
+except exc.GitError as e:
+    st.error(f"Git error: {str(e)}")
+    st.stop()
+
+# Pull the latest changes from GitHub
+try:
+    origin.pull()
+except exc.GitError as e:
+    st.error(f"Failed to pull the latest changes: {str(e)}")
+    st.stop()
 
 # Function to generate a download link for the database file
 def download_database(db_file):
@@ -53,27 +68,18 @@ def push_to_github():
         
         # Check if the database file exists and stage it for commit
         if os.path.exists(db_path):
-            print(f"Staging file for commit: {db_file_name}")
             repo.git.add('--force', db_file_name)  # Use the file name to ensure it adds the correct file
         else:
-            print(f"File not found at path: {db_path}")
             st.error("Database file not found. Cannot push to GitHub.")
             return
         
         # Commit the changes
-        print("Committing changes to GitHub...")
         repo.index.commit("Update database with latest changes")
         
         # Push the changes to GitHub
-        print("Pushing changes to GitHub...")
         origin.push()
         
         st.success("Changes have been pushed to GitHub successfully!")
-    
-    except exc.GitCommandError as e:
-        st.error(f"Failed to push changes to GitHub: {str(e)}")
-    except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
     
     except exc.GitCommandError as e:
         st.error(f"Failed to push changes to GitHub: {str(e)}")
