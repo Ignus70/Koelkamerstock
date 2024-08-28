@@ -24,8 +24,8 @@ github_token = st.secrets["github"]["token"]
 # Set the repository URL to use HTTPS and include the token
 repo_url = f'https://{github_token}@github.com/Ignus70/Koelkamerstock.git'
 
-# Use a fixed directory for the repository path
-repo_path = '/home/adminuser/koelkamer_repo'  # Adjust this path based on your environment
+# Use Streamlit's temporary directory for the repository path
+repo_path = os.path.join(st.experimental_get_dir(), 'repo')  # This ensures the path is writable
 db_file_name = 'stock_control.db'
 db_path = os.path.join(repo_path, db_file_name)  # Full path to the database file
 
@@ -33,7 +33,7 @@ db_path = os.path.join(repo_path, db_file_name)  # Full path to the database fil
 if not os.path.exists(repo_path):
     os.makedirs(repo_path)
 
-# Clone the repository into the fixed directory
+# Clone the repository into the temporary directory
 try:
     if not os.path.exists(os.path.join(repo_path, '.git')):
         print("Cloning the repository...")
