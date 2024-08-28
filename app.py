@@ -33,7 +33,8 @@ repo_url = f'https://{github_token}:x-oauth-basic@github.com/Ignus70/Koelkamerst
 
 # Use a temporary directory for the repository path
 repo_path = tempfile.mkdtemp()
-db_path = os.path.join(repo_path, 'stock_control.db')
+db_file_name = 'stock_control.db'
+db_path = os.path.join(repo_path, db_file_name)  # Full path to the database file
 
 # Clone the repository if not already cloned
 if not os.path.exists(os.path.join(repo_path, '.git')):
@@ -50,8 +51,14 @@ def push_to_github():
         # Change to the repository path
         os.chdir(repo_path)
         
-        # Ensure that the correct path to the database is added
-        repo.git.add('stock_control.db')
+        # Ensure that the correct path to the database is used and that changes are staged
+        if os.path.exists(db_path):
+            print("File found:", db_path)
+            repo.git.add('--force', db_file_name)  # Force add to ensure it gets staged, use file name relative to repo_path
+        else:
+            print("File not found:", db_path)
+        
+        # Commit and push changes
         repo.index.commit("Update database with latest changes")
         origin.push()
         
