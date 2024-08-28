@@ -27,6 +27,21 @@ def download_database(db_file):
     return href
 
 # Use a temporary directory for the repository path
+ssh_key = st.secrets["ssh"]["private_key"]
+ssh_key_path = os.path.expanduser("~/.ssh/id_rsa")
+
+# Ensure the .ssh directory exists
+os.makedirs(os.path.dirname(ssh_key_path), exist_ok=True)
+
+# Write the SSH key to a file and set permissions
+with open(ssh_key_path, "w") as f:
+    f.write(ssh_key)
+os.chmod(ssh_key_path, 0o600)  # Set permissions to secure the SSH key
+
+# Set the Git executable path if needed (usually not necessary on Streamlit Cloud)
+os.environ['GIT_PYTHON_GIT_EXECUTABLE'] = r'C:\Program Files\Git\bin\git.exe'  # Adjust this if on Windows
+
+# Use a temporary directory for the repository path
 repo_path = tempfile.mkdtemp()
 db_path = os.path.join(repo_path, 'stock_control.db')
 
