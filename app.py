@@ -4,6 +4,9 @@ import pandas as pd
 import streamlit as st
 import base64
 import time
+from git import Repo, exc
+import os
+import tempfile
 
 # Function to connect to the SQLite database
 def create_connection(db_file='stock_control.db'):
@@ -22,6 +25,41 @@ def download_database(db_file):
     b64 = base64.b64encode(data).decode()
     href = f'<a href="data:file/sqlite;base64,{b64}" download="{db_file}">Download {db_file}</a>'
     return href
+
+# Use a temporary directory for the repository path
+repo_path = tempfile.mkdtemp()
+db_path = os.path.join(repo_path, 'stock_control.db')
+
+# Replace with the actual SSH URL of your GitHub repository
+repo_url = 'git@github.com:Ignus70/Koelkamerstock.git'
+
+# Clone the repository if not already cloned
+if not os.path.exists(os.path.join(repo_path, '.git')):
+    Repo.clone_from(repo_url, repo_path)
+
+# Pull the latest changes from GitHub
+repo = Repo(repo_path)
+origin = repo.remote(name='origin')
+origin.pull()
+
+# Function to commit and push changes to GitHub
+def push_to_github():
+    try:
+        # Change to the repository path
+        os.chdir(repo_path)
+        
+        # Ensure that the correct path to the database is added
+        repo.git.add('stock_control.db')
+        repo.index.commit("Update database with latest changes")
+        origin.push()
+        
+        st.success("Changes have been pushed to GitHub successfully!")
+    
+    except exc.GitCommandError as e:
+        st.error(f"Failed to push changes to GitHub: {str(e)}")
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
+
 
 # Main Streamlit app
 def main():
@@ -182,6 +220,7 @@ def main():
                     po_numbers = [entry['po_number'] for entry in st.session_state.product_entries]
                     print(f"Submitting transaction: {product_ids}, {quantities}, {account_ids}, {return_ids}, {po_numbers}")
                     add_transaction(trans_type_id[0], product_ids, quantities, account_ids, return_ids, po_numbers)
+                    push_to_github()
                     st.success('Transaction recorded successfully!')
                     st.session_state.product_entries = []
 
