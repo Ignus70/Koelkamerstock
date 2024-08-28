@@ -22,7 +22,7 @@ def create_connection(db_file='stock_control.db'):
 github_token = st.secrets["github"]["token"]
 
 # Set the repository URL to use HTTPS and include the token
-repo_url = f'https://{github_token}:x-oauth-basic@github.com/Ignus70/Koelkamerstock.git'
+repo_url = f'https://{github_token}@github.com/Ignus70/Koelkamerstock.git'
 
 # Use a fixed directory for the repository path
 repo_path = '/home/adminuser/koelkamer_repo'  # Adjust this path based on your environment
@@ -33,21 +33,20 @@ db_path = os.path.join(repo_path, db_file_name)  # Full path to the database fil
 if not os.path.exists(repo_path):
     os.makedirs(repo_path)
 
-# Clone the repository if not already cloned
+# Clone the repository into the fixed directory
 try:
     if not os.path.exists(os.path.join(repo_path, '.git')):
+        print("Cloning the repository...")
         Repo.clone_from(repo_url, repo_path)
     repo = Repo(repo_path)
     origin = repo.remote(name='origin')
-except exc.NoSuchPathError:
-    st.error(f"Repository path {repo_path} does not exist.")
-    st.stop()
 except exc.GitError as e:
     st.error(f"Git error: {str(e)}")
     st.stop()
 
 # Pull the latest changes from GitHub
 try:
+    print("Pulling the latest changes...")
     origin.pull()
 except exc.GitError as e:
     st.error(f"Failed to pull the latest changes: {str(e)}")
