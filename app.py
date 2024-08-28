@@ -24,14 +24,18 @@ github_token = st.secrets["github"]["token"]
 # Set the repository URL to use HTTPS and include the token
 repo_url = f'https://{github_token}:x-oauth-basic@github.com/Ignus70/Koelkamerstock.git'
 
-# Use a temporary directory for the repository path
-repo_path = tempfile.mkdtemp()
+# Use a fixed directory for the repository path
+repo_path = '/home/adminuser/koelkamer_repo'  # Adjust this path based on your environment
 db_file_name = 'stock_control.db'
 db_path = os.path.join(repo_path, db_file_name)  # Full path to the database file
 
-# Clone the repository into the temporary directory
+# Ensure the directory exists
+if not os.path.exists(repo_path):
+    os.makedirs(repo_path)
+
+# Clone the repository if not already cloned
 try:
-    if not os.path.exists(repo_path):
+    if not os.path.exists(os.path.join(repo_path, '.git')):
         Repo.clone_from(repo_url, repo_path)
     repo = Repo(repo_path)
     origin = repo.remote(name='origin')
