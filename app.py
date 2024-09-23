@@ -433,7 +433,7 @@ def add_filters(df, filter_columns):
 
     if clear_filters:
         for col in filter_columns:
-            st.session_state[f"filter_{col}"] = "All"
+            st.session_state[f"filter_{col}"] = []
         st.rerun()
 
     num_filters_per_row = 4
@@ -446,22 +446,18 @@ def add_filters(df, filter_columns):
             if col_idx < len(filter_columns):
                 col = filter_columns[col_idx]
                 with cols[idx]:
-                    unique_values = ["All"] + list(df[col].fillna('None').unique())
+                    unique_values = list(df[col].dropna().unique())
                     if f"filter_{col}" not in st.session_state:
-                        st.session_state[f"filter_{col}"] = "All"
-                    filters[col] = st.selectbox(f"{col}", unique_values, key=f"filter_{col}")
-
-    return filters
+                        st.session_state[f"filter_{col}"] = []
+                    # Multi-selection filter for the column
+                    filters[col] = st.multiselect(f"{col}", unique_values, default=st.session_state[f"filter_{col}"])
 
     return filters
 
 def apply_filters(df, filters):
-    for col, value in filters.items():
-        if value != "All":
-            if value == 'None':
-                df = df[df[col].isna()]
-            else:
-                df = df[df[col] == value]
+    for col, selected_values in filters.items():
+        if selected_values:  # Apply the filter only if the user has selected values
+            df = df[df[col].isin(selected_values)]
     return df
 
 def add_week_numbers(df, date_column):
