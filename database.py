@@ -179,10 +179,6 @@ def get_transactions():
     conn.close()
     return transactions
 
-
-
-
-# Function to get recon data
 def get_recon_data():
     conn = create_connection('stock_control.db')
     if conn:
@@ -232,12 +228,13 @@ def get_recon_data():
                 GROUP BY pt.Product_ID_FK
             )
             SELECT p.Product,
-                   pst.PreviousStocktakeDate AS transdate_Start,
-                   lst.LatestStocktakeDate AS transdate_End,
+                   strftime('%Y-%m-%d %H:%M', pst.PreviousStocktakeDate) AS transdate_Start,
+                   strftime('%Y-%m-%d %H:%M', lst.LatestStocktakeDate) AS transdate_End,
+                   COALESCE(pstb.StocktakeQty, 0) AS PreviousBalance,
                    trir.Qty_In,
                    trir.Qty_Uit,
                    trir.Qty_Return,
-                   COALESCE(pstb.StocktakeQty, 0) AS PreviousBalance,
+                   (COALESCE(pstb.StocktakeQty, 0) + COALESCE(trir.Qty_In, 0) - COALESCE(trir.Qty_Uit, 0) + COALESCE(trir.Qty_Return, 0)) AS Calculated_Level,
                    COALESCE(lstb.StocktakeQty, 0) AS LatestBalance,
                    (COALESCE(pstb.StocktakeQty, 0) + COALESCE(trir.Qty_In, 0) - COALESCE(trir.Qty_Uit, 0) + COALESCE(trir.Qty_Return, 0) - COALESCE(lstb.StocktakeQty, 0)) * -1 AS Deviation
             FROM tbl_Product p
