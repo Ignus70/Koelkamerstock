@@ -46,9 +46,10 @@ def add_product(product_name):
     return None
 
 # Function to add a transaction
-def add_transaction(trans_type_id, product_ids, quantities, account_ids, return_ids, po_numbers):
+def add_transaction(trans_type_id, product_ids, quantities, account_ids, return_ids, po_numbers, date):
     conn = create_connection('stock_control.db')
     customer_id = st.session_state.get('user_id')  # Get the logged-in user's ID from session state
+    date = date.strftime('%Y-%m-%d %H:%M:%S')
     if not customer_id:
         raise ValueError("No logged-in user found")
 
@@ -57,7 +58,7 @@ def add_transaction(trans_type_id, product_ids, quantities, account_ids, return_
             with conn:
                 transaction_sql = '''INSERT INTO tbl_Transaction(TransType_ID_FK, DateTime, Customer_ID_FK) VALUES(?,?,?)'''
                 cur = conn.cursor()
-                cur.execute(transaction_sql, (trans_type_id, datetime.now(), customer_id))
+                cur.execute(transaction_sql, (trans_type_id, date, customer_id))
                 transaction_id = cur.lastrowid
 
                 if trans_type_id in [1, 3]:  # 'In' or 'Stock Take'
