@@ -176,22 +176,36 @@ def main():
             return_types = load_return_types()
             trans_type_id = st.selectbox('Transaction Type', trans_types, format_func=lambda x: x[1])
 
+            local_tz = pytz.timezone('Africa/Johannesburg')
+            new_local = datetime.now(local_tz)
+
             with st.form("transaction_form"):
-                # Buttons to add or remove products
+
+                # Two columns for Date & Time and PO Number
                 col1, col2 = st.columns(2)
+
+                # Date input on the left
                 with col1:
-                    if st.form_submit_button('Add another product'):
-                        st.session_state.product_entries.append({'product_id': None, 'qty': 1, 'account_id': None, 'return_id': None, 'po_number': None})
-                        st.rerun()
+                    transaction_date = st.date_input("Transaction Date", value=new_local.date(), key="transaction_date")
+                    po_number = None
+                    if trans_type_id[1] in ['Uit', 'Return']:
+                        po_number = st.text_input('PO Number')
+
+                # PO Number input on the right
                 with col2:
+                    transaction_time = st.time_input("Transaction Time", value=new_local.time(), key="transaction_time")
+
+                transaction_datetime = pd.Timestamp.combine(transaction_date, transaction_time)
+
+                col3, col4 = st.columns(2)
+                with col3:
+                    if st.form_submit_button('Add another product'):
+                        st.session_state.product_entries.append({'product_id': None, 'qty': 1, 'account_id': None, 'return_id': None})
+                        st.rerun()
+                with col4:
                     if st.form_submit_button('Remove last product') and len(st.session_state.product_entries) > 1:
                         st.session_state.product_entries.pop()
                         st.rerun()
-
-                # Ensure all entries have 'po_number'
-                for entry in st.session_state.product_entries:
-                    if 'po_number' not in entry:
-                        entry['po_number'] = None
 
                 # Dynamically manage product selections
                 for i, entry in enumerate(st.session_state.product_entries):
@@ -206,8 +220,8 @@ def main():
                     with cols1[1]:
                         entry['qty'] = st.number_input('Quantity', value=entry['qty'], min_value=0, key=f"qty_{i}")
 
-                    # Second row: account, return type, and PONumber
-                    cols2 = st.columns([3, 2, 2])
+                    # Second row: account and return type
+                    cols2 = st.columns([3, 2])
                     if trans_type_id[1] in ['Uit', 'Return']:  # Check if transaction type is 'Uit' or 'Return'
                         with cols2[0]:
                             account_names = [account[1] for account in account_list]
@@ -224,22 +238,21 @@ def main():
                     else:
                         entry['return_id'] = None
 
-                    with cols2[2]:
-                        if trans_type_id[1] in ['Uit', 'Return']:  # PONumber is required for 'Uit' and 'Return' but can be null
-                            entry['po_number'] = st.text_input('PONumber', key=f"po_{i}")
-
                     st.markdown("</div>", unsafe_allow_html=True)
 
-                # Form submission button
+                # Form submission
                 submitted = st.form_submit_button("Submit Transaction")
                 if submitted:
                     product_ids = [entry['product_id'][0] for entry in st.session_state.product_entries]
                     quantities = [entry['qty'] for entry in st.session_state.product_entries]
                     account_ids = [entry['account_id'] for entry in st.session_state.product_entries if entry['account_id'] is not None]
                     return_ids = [entry['return_id'] for entry in st.session_state.product_entries if entry['return_id'] is not None]
-                    po_numbers = [entry['po_number'] for entry in st.session_state.product_entries]
-                    print(f"Submitting transaction: {product_ids}, {quantities}, {account_ids}, {return_ids}, {po_numbers}")
-                    add_transaction(trans_type_id[0], product_ids, quantities, account_ids, return_ids, po_numbers)
+
+                    # Use the single PO Number for all products in the transaction
+                    po_numbers = [po_number] * len(product_ids)
+
+                    # Use the combined date & time for the entire transaction
+                    add_transaction(trans_type_id[0], product_ids, quantities, account_ids, return_ids, po_numbers, transaction_datetime)
                     st.success('Transaction recorded successfully!')
                     st.session_state.product_entries = []
                     push_to_github()
