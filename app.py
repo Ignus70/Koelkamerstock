@@ -355,7 +355,7 @@ def main():
                                     st.error("Failed to retrieve the Product ID.")
                     
                         elif edit == 'Edit':
-                            df_transactions_edit = pd.DataFrame(get_transactions_edit(),columns=['Trans_ID', 'Product', 'Product_ID', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'PONumber', 'weekNo'])
+                            df_transactions_edit = pd.DataFrame(get_transactions_edit(),columns=['Trans_ID', 'Product', 'Product_ID', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'PONumber', 'weekNo']).sort_values(by='Date', ascending=False)
                 # Display the dataframe with inline editing enabled
                             edited_df = st.data_editor(df_transactions_edit, num_rows="dynamic", key='transactions_editor')
 
@@ -398,15 +398,11 @@ def main():
                         st.write("Filtered Transactions:")
                         st.dataframe(df_paginated)
 
-
-
-
-
             elif view_mode == 'Recon':
                 st.write("Recon View:")
                 recon_data = get_recon_data()
-                df_recon = pd.DataFrame(recon_data, columns=['Product', 'transdate_Start', 'transdate_End', 'Qty_In', 'Qty_Uit', 'Qty_Returned', 'Previous Balance', 'Latest Balance', 'Deviation',])
-                df_recon = add_week_numbers(df_recon, 'transdate_End')
+                df_recon = pd.DataFrame(recon_data, columns=['Product', 'Start', 'End', 'Start Balance', 'Qty_In', 'Qty_Uit', 'Returned', 'Calculated Balance', 'End Balance', 'Error',])
+                df_recon = add_week_numbers(df_recon, 'End')
 
                 st.write("Product Recon Balances:")
 
@@ -416,7 +412,7 @@ def main():
                 df_filtered = apply_filters(df_recon, filters)
 
                 # Sorting and Pagination
-                df_filtered = df_filtered.sort_values(by='transdate_End', ascending=False)
+                df_filtered = df_filtered.sort_values(by='End', ascending=False)
                 df_paginated = paginate_dataframe(df_filtered, page_size=10)
 
                 st.table(df_paginated)
