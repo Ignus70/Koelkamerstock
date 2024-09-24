@@ -325,7 +325,7 @@ def main():
                         edit = st.radio('Edit:', ('No', 'Delete', 'Edit'), key='edit_mode')
                         
                         if edit == 'Delete':
-                            df_transactions = pd.DataFrame(transactions, columns=['Trans_ID', 'Product', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'PONumber', 'weekNo'])
+                            df_transactions = pd.DataFrame(transactions, columns=['Trans_ID', 'Product', 'TransType', 'Quantity', 'Date', 'Account', 'Name', 'ReturnType', 'PONumber', 'weekNo']).sort_values(by='Date', ascending=False)
                             
                             # Display the dataframe with selections enabled
                             selected_rows = st.dataframe(
