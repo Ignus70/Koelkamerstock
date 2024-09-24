@@ -380,6 +380,7 @@ def main():
                                     st.write(f"Trans_ID: {transaction_id}, Product_ID: {product_id}")
                                 time.sleep(1)
                                 st.success("Changes saved successfully!")
+                                push_to_github()
                                 st.rerun()  # Refresh the page after update
 
 
