@@ -123,7 +123,7 @@ def get_balances():
                 GROUP BY pt.Product_ID_FK
             )
             SELECT p.Product,
-                   COALESCE(sb.StocktakeQty, 0) +
+                   COALESCE(sb.StocktakeQty, 0) + 
                    SUM(CASE WHEN t.TransType = 'In' THEN pt.Qty
                             WHEN t.TransType = 'Uit' THEN -pt.Qty
                             WHEN t.TransType = 'Return' AND r.ReturnType = 'Hergebruik' THEN pt.Qty
@@ -142,6 +142,7 @@ def get_balances():
         finally:
             conn.close()
     return []
+
 
 # Function to get transactions
 def get_transactions():
