@@ -349,6 +349,7 @@ def main():
                                     if st.button("Delete Selected Transaction"):
                                         delete_transaction(selected_transaction_id, selected_product_id)
                                         st.success(f"Deleted Transaction_ID: {selected_transaction_id} and Product_ID: {selected_product_id}")
+                                        push_to_github()
                                         time.sleep(1)
                                         st.rerun()  # Refresh the page after deletion
                                 else:
